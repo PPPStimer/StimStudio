@@ -1,0 +1,7 @@
+# Text files are stored with LF in the repository; Git converts on checkout.
+* text=auto
+
+*.jpg binary
+*.JPG binary
+*.png binary
+*.npz binary

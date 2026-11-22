@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+*.stimproj.tmp
+# local device settings (host / access keys)
+howl_remote_settings.json
+# local material that is not part of the release
+NotInclude/

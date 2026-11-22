@@ -1,0 +1,22 @@
+# StimStudio runtime dependencies (Python 3.14+)
+#   pip install -r requirements.txt
+#   python StimStudio.pyw
+# Keep this file ASCII: older pip decodes it with the system locale.
+# Minimums are the versions StimStudio is developed and tested with.
+
+# Required
+numpy>=2.4
+PyQt6>=6.11
+pyqtgraph>=0.14
+soundfile>=0.14
+sounddevice>=0.5          # Linux also needs PortAudio: apt install libportaudio2
+opensimplex>=0.4.5
+
+# Optional: the app runs without these, with the listed features reduced
+scipy>=1.18               # faster FFT and resampling
+soxr>=1.1                 # fastest resampling
+librosa>=0.11             # audio formats libsndfile can't read
+av>=17                    # filmstrip, video sound, video analysis
+opencv-python>=5.0        # optical flow for Motion -> stim
+
+# Tests: pip install -e .[dev]

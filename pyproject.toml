@@ -1,0 +1,43 @@
+[project]
+name = "stimstudio"
+version = "1.0.0"
+description = "Multitrack e-stim pattern studio: .hwl export, Howl remote and audio output"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.14"
+# minimums are the versions StimStudio is developed and tested with
+dependencies = [
+    "numpy>=2.4",
+    "PyQt6>=6.11",
+    "pyqtgraph>=0.14",
+    "soundfile>=0.14",
+    "sounddevice>=0.5",
+    "opensimplex>=0.4.5",
+]
+
+[project.optional-dependencies]
+audio-import = ["librosa>=0.11", "scipy>=1.18", "soxr>=1.1"]
+video = ["av>=17"]          # filmstrip thumbnails and fast duration probe
+optical-flow = ["opencv-python>=5.0"]   # more accurate motion direction in video analysis
+dev = ["pytest>=9.1"]
+
+[project.urls]
+Homepage = "https://github.com/PPPStimer/StimStudio"
+Issues = "https://github.com/PPPStimer/StimStudio/issues"
+
+[project.scripts]
+stimstudio = "stimstudio.__main__:main"
+
+[build-system]
+requires = ["setuptools>=77"]   # SPDX string in project.license
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["stimstudio*"]
+
+[tool.setuptools.package-data]
+stimstudio = ["resources/**/*", "gui/ss.svg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
