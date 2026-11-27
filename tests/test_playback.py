@@ -137,11 +137,21 @@ def test_device_switch_stops_output(window, pb, qapp):
 
 
 def test_export_audio(window, tmp_path, monkeypatch):
+    """File → Export audio opens the export dialog on WAV; Export writes the file."""
     import soundfile as sf
-    from PyQt6.QtWidgets import QFileDialog
+    from stimstudio.gui.export_dialog import ExportDialog
     out = str(tmp_path / "out.wav")
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (out, ""))
+    shown = []
+
+    def fake_exec(dlg):
+        shown.append((dlg.fmt, dlg.summary_box.isVisibleTo(dlg), dlg.summary.rowCount()))
+        dlg.path.setText(out)
+        dlg.run()
+        return dlg.result()
+
+    monkeypatch.setattr(ExportDialog, "exec", fake_exec)
     window.export_audio()
+    assert shown and shown[0][0] == "wav" and shown[0][1] and shown[0][2] >= 8
     info = sf.info(out)
     assert info.samplerate == 48000 and info.channels == 2
     assert abs(info.frames / 48000 - window.doc.last_render.n / FS) < 0.01

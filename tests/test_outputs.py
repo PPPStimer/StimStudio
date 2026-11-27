@@ -83,6 +83,25 @@ def test_frequency_map():
     assert np.allclose(fmap.to_hz_into(np.array([0.0, 0.5, 1.0], np.float32), buf), [10, 55, 100])
 
 
+def test_frequency_range_round_trip():
+    """The Hz typed in the Output panel come back exactly (a float a hair under
+    the integer used to lose 1 Hz: 50 → 49, 1000 → 999)."""
+    for lo, hi in ((1, 200), (20, 20000)):
+        base = FrequencyMap(lo, hi)
+        for a in list(range(lo, hi + 1, 7)) + [hi]:
+            for b in (a, min(hi, a + 1), min(hi, a + 333), hi):
+                m = base.with_hz(a, b)
+                assert (m.min_hz, m.max_hz) == (a, b), (lo, hi, a, b)
+
+
+def test_continuous_pitch_range_up_to_20_khz():
+    fmap = ContinuousSink.default_freq_map
+    assert (fmap.min_limit, fmap.max_limit) == (20, 20000)
+    assert (fmap.min_hz, fmap.max_hz) == (500, 1000)                 # the default pitch
+    high = fmap.with_hz(15000, 20000)
+    assert high.to_hz(0.0) == 15000 and high.to_hz(1.0) == 20000
+
+
 # ── pulse source / safety ───────────────────────────────────────────────────
 def test_pulse_source_snapshot_and_wrap():
     source = PulseSource()

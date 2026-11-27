@@ -10,3 +10,7 @@ dist/
 howl_remote_settings.json
 # local material that is not part of the release
 NotInclude/
+# tools/ui_audit.py output
+ui_audit/
+# local editor settings
+.vscode/

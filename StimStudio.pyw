@@ -3,6 +3,9 @@ r"""Start the StimStudio GUI: ``StimStudio.pyw [project.stimproj]``.
 A double-click runs it with pythonw, without a console window; output and crash
 tracebacks then go to %LOCALAPPDATA%\StimStudio\StimStudio.log. Started as
 ``python StimStudio.pyw`` in a terminal, they stay in the terminal.
+
+``--scale 1.5`` makes the whole interface 1.5× larger for this run (View →
+Interface size keeps a size): on a 100 % monitor it shows what a 150 % one sees.
 """
 
 import os

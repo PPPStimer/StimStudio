@@ -5,3 +5,6 @@
 *.JPG binary
 *.png binary
 *.npz binary
+
+# shell scripts run on Linux / macOS: LF in every checkout
+*.sh text eol=lf

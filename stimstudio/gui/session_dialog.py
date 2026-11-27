@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QD
                              QVBoxLayout)
 
 from ..core import session as ss
-from . import theme
+from . import metrics, theme
 
 PHASE_COLORS = {"warmup": (78, 201, 176, 40), "build": (86, 156, 214, 34),
                 "peak": (241, 76, 76, 46), "cooldown": (197, 134, 192, 40)}
@@ -24,7 +24,7 @@ class SessionDialog(QDialog):
         self.bpm = bpm
         self.markers = sorted(float(m) for m in markers)
         self.plan: ss.SessionPlan | None = None
-        lay = QVBoxLayout(self)
+        lay = QVBoxLayout(metrics.scroll_body(self))
 
         form = QFormLayout()
         self.minutes = QDoubleSpinBox()
@@ -114,7 +114,7 @@ class SessionDialog(QDialog):
         self.style.currentIndexChanged.connect(self.update_plan)
         for w in (self.triphase, self.bpm_sync, self.align):
             w.toggled.connect(self.update_plan)
-        self.resize(560, 640)
+        metrics.fit_to_screen(self, 560, 640)
         self.update_plan()
 
     def spec(self) -> ss.SessionSpec:

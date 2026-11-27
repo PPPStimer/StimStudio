@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpi
 
 from ...core.pulse import FS
 from ...io import video_colors as vc
-from .. import theme
+from .. import metrics, theme
 from ..video_analysis import RoiPicker
 from .base import ToolWindow
 
@@ -329,11 +329,11 @@ class ColorRhythmWindow(ToolWindow):
         self._frame_timer.setInterval(120)
         self._frame_timer.timeout.connect(self._load_frame)
         self._build()
-        self.resize(1180, 820)
+        metrics.fit_to_screen(self, 1180, 820)
 
     # ── layout ──────────────────────────────────────────────────────────────
     def _build(self) -> None:
-        lay = QVBoxLayout(self)
+        lay = QVBoxLayout(metrics.scroll_body(self))
         src = QHBoxLayout()
         src.addWidget(QLabel("Video:"))
         self.source_label = QLabel("—")

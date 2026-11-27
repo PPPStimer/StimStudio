@@ -1,6 +1,6 @@
 [project]
 name = "stimstudio"
-version = "1.0.0"
+version = "1.1.0"
 description = "Multitrack e-stim pattern studio: .hwl export, Howl remote and audio output"
 readme = "README.md"
 license = "MIT"
@@ -24,6 +24,7 @@ dev = ["pytest>=9.1"]
 [project.urls]
 Homepage = "https://github.com/PPPStimer/StimStudio"
 Issues = "https://github.com/PPPStimer/StimStudio/issues"
+Changelog = "https://github.com/PPPStimer/StimStudio/blob/main/CHANGELOG.md"
 
 [project.scripts]
 stimstudio = "stimstudio.__main__:main"

@@ -115,10 +115,13 @@ pip install -e .[dev]            # pytest
 
 python StimStudio.pyw                   # the editor (or double-click StimStudio.pyw)
 python StimStudio.pyw project.stimproj  # open a project
+python StimStudio.pyw --scale 1.25      # the whole interface 25 % larger (this run only)
 python -m stimstudio gui                # the same
 ```
 
 `StimStudio.pyw` finds the `stimstudio` package next to itself, so it can be started from any folder: by a double-click, from a shortcut, or from a terminal opened elsewhere. A double-click runs it without a console window; output and crash reports then go to `%LOCALAPPDATA%\StimStudio\StimStudio.log`.
+
+**Interface size.** StimStudio follows the Windows display scale (Settings → Display → Scale) and fits its window, docks and dialogs to the screen: on a small screen or at a large scale (1920×1080 at 150 % leaves 1280×720 for the interface) the docks and big windows scroll instead of running off the screen. If everything is too small or too large for you, choose **View → Interface size** (applied at the next start): 110–200 % makes everything larger on top of the Windows scale, 80–90 % makes the text smaller (Qt can't draw below the display's own scale without leaving old pixels on screen). For one run, start with `--scale 1.5`; the `QT_SCALE_FACTOR` environment variable does the same.
 
 All plots and the timeline are rendered **in hardware through OpenGL**. If OpenGL isn't available (virtual machine, remote desktop), switch to software rendering with the environment variable `STIMSTUDIO_SOFTWARE_RENDER=1`.
 
@@ -158,12 +161,12 @@ Docks can be dragged, tabbed together, floated and closed. A closed dock comes b
 
 | Menu | Items |
 |---|---|
-| **File** | New, Open, Open recent, Save, Save As, Project media…, Open video…, Import audio, Import funscript, Import beat timestamps (CSV), Import .hwl as clip, Import .parthwl clip, Export…, Export .hwl, Export audio, Export clip as .parthwl, Quit |
+| **File** | New, Open, Open recent, Save, Save As, Project media…, Open video…, Import audio, Import funscript, Import beat timestamps (CSV), Import .hwl as clip, Import .parthwl clip, Export…, Export .hwl, Export audio, Export funscript, Export clip as .parthwl, Quit |
 | **Edit** | Undo, Redo, Cut, Copy, Paste at cursor, Delete, Duplicate, Split at cursor, Glue clips, Mute/unmute clip, Save clip as preset, Select all, Clear all markers |
 | **Transport** | Play, Stop, PANIC, Loop, Loop selected clips, Loop between markers, Clear loop region, Record take, Add marker at cursor, Previous / Next marker, Follow playhead |
 | **Track** | Add track, Add triphase track, Add modulator track (audio), Duplicate track, Delete track, Session builder…, Video motion → stim…, Detect scene cuts → markers…, Triphase calibration… |
 | **Tools** | Utilities in separate windows: Color rhythm from video…, Triphase audio → stim clip…; duplicates of Video motion → stim… and Detect scene cuts → markers… |
-| **View** | Zoom, Project overview bar, Video full screen (F11), dock visibility |
+| **View** | Zoom, Project overview bar, Video full screen (F11), dock visibility, Interface size |
 | **Help** | Keyboard shortcuts (F1), Support development…, About |
 
 ---
@@ -292,9 +295,9 @@ Any edit can be undone with Ctrl+Z.
 
 Markers are named points on the timeline: a scene start, a hit, a session phase. Their flags are shown in the top strip of the ruler, and dashed lines run across all tracks.
 
-* **Add:** double-click the ruler, **Shift+M** (at the cursor), video cut detection, the session builder.
+* **Add:** double-click the ruler, **Shift+M** (at the cursor), video cut detection, the session builder. Double-click and Shift+M open the marker window first: a **name** and a **colour** (ten swatches or **Other…**); Cancel adds nothing. A new marker starts with the colour used last.
 * **Move:** drag the flag (on the grid; freely with **Alt**). **Clicking** a flag puts the cursor there.
-* **Rename:** double-click the flag. **Right-click:** Go to marker, Loop to next marker, Rename, Colour, Delete.
+* **Edit:** double-click the flag for the same name + colour window (one undo step). **Right-click:** Go to marker, Loop to next marker, Name and colour…, Delete.
 * **Navigation:** **Ctrl+←/→** — previous / next marker; **Ctrl+Shift+L** — loop between the markers around the cursor.
 * **Magnet:** with Snap on, the cursor, the start and end of a dragged clip and envelope points stick to a marker within 8 pixels.
 * **Edit → Clear all markers** deletes them all. Markers are stored in the project, and every edit can be undone.
@@ -310,12 +313,12 @@ Exact ports of Howl's activities (Kotlin → Python). All 🎲. What each activi
 
 | Generator | Parameters |
 |---|---|
-| Infinite licks | manual mode, speed, lick start/end, lick type, amplitude type |
-| Penetration | manual mode, speed, feel |
-| Sliding vibrator | hold probability, pulse duration and duty cycle, manual mode, position, frequency |
+| Infinite licks | manual mode, speed, lick start/end, lick type, amplitude type (stages) |
+| Penetration | manual mode, speed, feel (stages) |
+| Sliding vibrator | hold probability, pulse duration and duty cycle, manual mode, position, frequency (stages) |
 | Milkmaster 3000 | — (stages) |
-| Chaos | cycle duration |
-| Luxury HJ | bonus probability, amplitude and timing spread, manual mode, speed |
+| Chaos | cycle duration (stages) |
+| Luxury HJ | bonus probability, amplitude and timing spread, manual mode, speed, bonus channel and speed (stages) |
 | Opposites, Calibration 1, Calibration 2, Fast/slow, Relentless, Overflowing, Succubus | — (some have stages) |
 | BJ Megamix | manual mode, speed, stage |
 | Simplex | preset STANDARD / PRO / TURBO |
@@ -572,6 +575,7 @@ Video helps you write a script for a clip: the picture runs in sync with the tim
 | 🔊 and volume | Video sound (through the default device). If the stim goes through an audio output, pick a different device for it |
 | **Offset** | Picture offset relative to the timeline (±5 s), compensates for output latency |
 | ⛶ | Full screen on the monitor the dock is on (you can move the dock to a second monitor); also F11 or double-clicking the picture. In full screen: Space — play/pause, F11 or double-click — exit, **Esc** — PANIC and exit |
+| **Fast-forward x2 / x5 / x10** | The cursor and the video run 2, 5 or 10 times faster (the video's sound is muted meanwhile); the same button again stops. Stim is never played fast: a playing output pauses with its 0.3 s fade and, when you turn fast-forward off, resumes from the new spot with soft start. **Esc** (PANIC), Stop or reaching the end cancels the resume; Space or Play during fast-forward just starts playing from the cursor |
 
 **Sync.** The stim output is the clock: during playback the video follows the playhead. A small drift (40–150 ms) is corrected by changing the speed by ±5 %, a large one by seeking (for example, on a loop). When stopped, the video shows the frame under the cursor. Playback needs a selected output; to just watch the video without a device, choose **Dry run**.
 
@@ -715,8 +719,8 @@ These are heuristics, not a medical assessment: the thresholds are chosen for ty
 | Device | Connection | Notes |
 |---|---|---|
 | **Coyote 3 via Howl (remote)** | Howl on the phone, with remote access turned on in its settings. Host (or **Scan** — a search of this PC's subnet), port, access key, then **Connect**. See [Howl compatibility](#howl-compatibility) | Howl receives the rendered `.hwl` in one piece; after edits it reloads by itself (with a delay). Power and mute are sent live, and power changed on the phone shows up in the panel. There's an option to swap channels A↔B |
-| **Audio (continuous)** | Sound card (device choice); connects by itself on Play | A continuous tone whose pitch follows the frequency lane (500–1000 Hz). Shape: sine, square, triangle, trapezoid. Triphase with phase |
-| **Audio (wavelet)** | Sound card | Short carrier bursts (Hz, number of periods, fade), repeated at the pulse rate (10–100 Hz) |
+| **Audio (continuous)** | Sound card (device choice); connects by itself on Play | A continuous tone whose pitch follows the frequency lane (500–1000 Hz by default; the range can be set anywhere from 20 Hz to 20 kHz). Shape: sine, square, triangle, trapezoid. Triphase with phase |
+| **Audio (wavelet)** | Sound card | Short carrier bursts (carrier 100 Hz–20 kHz, number of periods, fade), repeated at the pulse rate (10–100 Hz) |
 | **Intiface / Buttplug (vibrators)** | Intiface Central on this PC (or on the network): start its server, enter the address (`ws://127.0.0.1:12345` by default), **Connect**, and **Scan** if needed | The channel level (with power, soft start and mute) goes to the toys 10 times per second. For each device you choose what it follows: A, B, the louder of A/B, or nothing (remembered by device name). The pulse frequency isn't sent. Stop, PANIC, a lost connection and closing the program stop all devices |
 | **Dry run** | No device | A log of the frames sent |
 
@@ -725,6 +729,12 @@ These are heuristics, not a medical assessment: the thresholds are chosen for ty
 * **frequency range** (Hz) — what the normalised frequency 0..1 is turned into;
 * **soft start**, **mute**.
 
+**Output signal monitor** (audio outputs only, at the bottom of the Output dock) shows exactly what goes to the sound card — after power, mute, soft start and fades:
+* **Scope** — channel A (left) and B (right) stacked; window 2 ms – 1 s; trigger on a rising zero crossing of A or B keeps the trace still;
+* **Spectrum** — both channels on a log frequency axis (dBFS), with the strongest frequency of each;
+* **XY** (Lissajous) — A across, B up: a diagonal line means in phase, a circle 90°, the other diagonal opposite phase; the readout gives the phase of B against A at their common frequency (useful for triphase);
+* **meters** — RMS (300 ms) and held peak per channel in dBFS; **Hold** freezes the trace while the meters keep running.
+
 The Howl address and key, the limits and soft start are remembered between sessions.
 
 ---
@@ -732,16 +742,18 @@ The Howl address and key, the limits and soft start are remembered between sessi
 ## Export
 
 **File → Export…** (Ctrl+Shift+E):
-* **format:** `.hwl`, WAV or FLAC (24-bit);
+* **format:** `.hwl`, WAV or FLAC (24-bit), or **funscript**;
 * **range:** the whole project, the loop region, or the span under the selected clips;
 * **output:** the **mix** as one file, or **stems**, one file per track (`<project> - 01 <track>.hwl`). Each stem is rendered solo, so master effects and modulation are kept in it;
-* **audio:** continuous or wavelet mode, a sample rate of 44.1, 48 or 96 kHz, and optionally the settings from the Output dock.
+* **audio:** continuous or wavelet mode, a sample rate of 44.1, 48 or 96 kHz, and optionally the settings from the Output dock. The **Signal** box lists what will be written before you press Export: format, sample rate, length and samples, file size, mode, tone pitch or carrier and burst rate, wave shape, triphase handling, level and where the settings come from;
+* **funscript:** the four lanes — amplitude and frequency of channels A and B, as positions 0–100, times relative to the start of the range. **4 files** (`name.amp_a.funscript`, `name.amp_b…`, `name.freq_a…`, `name.freq_b…`) or **one multi-axis file** (`axes` with the ids `amp_a`, `amp_b`, `freq_a`, `freq_b`). **Tolerance** (default 1 of 100) drops points that lie on a straight line, so files stay small; 0 keeps every change. Importing these files puts each axis back on its own lane.
 
 Audio export runs the same synthesis as the live output: the file matches what the sound card would have played, sample for sample (without soft start).
 
 **Quick actions:**
 * **Export .hwl** (Ctrl+E) — the whole mix;
-* **Export audio** — with the Output dock settings;
+* **Export audio** — the export dialog set to WAV, with the Output dock settings;
+* **Export funscript** — the export dialog set to funscript;
 * **Export clip as .parthwl** — the selected clip.
 
 An exported `.hwl` plays in Howl; see [Howl compatibility](#howl-compatibility).
@@ -829,7 +841,7 @@ The full list is in **Help → Keyboard shortcuts (F1)**.
 | Right-drag along the ruler / right-click it | Set / clear the loop region |
 | Ctrl+wheel / Shift+wheel / wheel | Zoom / horizontal / vertical scroll |
 | Video file onto the timeline | Open the video (adds a video track) |
-| Double-click the ruler / a marker flag | Add a marker / rename it |
+| Double-click the ruler / a marker flag | Add a marker / edit its name and colour |
 | Drag a flag / click / right-click | Move the marker / cursor to the marker / marker menu |
 | Overview strip: click, drag / wheel | Scroll / zoom |
 | Record pad: button held, wheel, 1–9, 0 | Level and frequency (position) / frequency (volume) / level / silence |
@@ -848,7 +860,7 @@ python -m stimstudio render project.stimproj out.wav --mode wavelet --rate 44100
 python -m stimstudio render project.stimproj part.hwl --start 30 --end 90
 python -m stimstudio stems  project.stimproj folder/ --format flac # one file per track
 python -m stimstudio info   file.hwl|.parthwl|.stimproj            # summary
-python -m stimstudio gui    [project.stimproj]                     # the editor
+python -m stimstudio gui    [project.stimproj] [--scale 1.5]       # the editor
 ```
 
 ---
@@ -884,17 +896,22 @@ Rendering runs in the background on a snapshot of the project and caches expensi
 | `stimstudio/io` | `.hwl`, `.parthwl`, `.stimproj`, presets, funscript, video (`video`, `video_analysis`) |
 | `stimstudio/gui` | The document (model, undo, background render), commands, Song Editor, Pattern editor, panels |
 | `tools/make_presets.py` | Rebuilds the bundled presets |
+| `tools/ui_audit.py` | The interface on other screens and display scales, checked on any one monitor (see below) |
 
 The core (`core`, `generators`, `effects`, `audio`, `io`, `outputs`) doesn't depend on Qt and is tested without the interface.
 
 ```
-python -m pytest           # 872 tests
+python -m pytest           # 919 tests
 ```
 
 The GUI tests run without a screen: the Qt offscreen platform, software rendering, settings in a temporary ini file (not the registry), autosave in a temporary folder. Some tests compare results with the original projects:
 * the generators match WaveHowl bit for bit;
 * the effects match the HWL Viewer reference (`tests/data/golden.npz`);
 * the frequencies in audio conversion match `hwlfromaudio`.
+
+**Other screens and display scales.** `python tools/ui_audit.py` opens the main window, every dock, the Pattern editor and Output pages and every dialog and Tools window on virtual screens (Qt's offscreen platform with a configured screen): 1920×1080, 1366×768, 1600×900, 2560×1440 and 3840×2160, each at 100 %, at the Windows display scales used on it (up to 175–200 %) and at 80 % (View → Interface size), 18 profiles, 4 at a time. It saves screenshots in device pixels and reports text that doesn't fit its widget, widgets pushed out of their parent, contents cut by a scroll area that doesn't scroll, windows larger than the screen, a hidden PANIC button and painted text under 10 px; results in `ui_audit/index.html` (`--list` for the profiles, `-p 1920x1080@150` for one, `--fail` for an exit code). `tests/test_ui_scale.py` runs the three tightest profiles. The offscreen platform draws with the Fusion style, the real app with the native Windows one. To look at the real app the same way: `python StimStudio.pyw --scale 1.5` on a 100 % monitor shows what a 150 % one sees. To look at the real app the same way: `python StimStudio.pyw --scale 1.5` on a 100 % monitor shows what a 150 % one sees.
+
+In code: size big windows with `metrics.fit_to_screen()` and give them `metrics.scroll_body()`; cap large minimum widths with `metrics.cap_to_screen()`; draw text with `metrics.paint_font()` (never under 10 px); avoid `setFixedWidth()` on widgets that hold text.
 
 The WaveHowl and HWL Viewer sources aren't in the repository. The tests that need them look for them in a local `NotInclude/External Data` folder and are skipped without it. The `golden.npz` reference is in the repository, so the effects check always runs.
 

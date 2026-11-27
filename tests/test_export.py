@@ -144,6 +144,115 @@ def test_export_dialog_loop_region_stems(window, tmp_path):
     assert path.suffix == ".wav" and sf.info(path).frames == 50 * 48000
 
 
+def test_export_dialog_signal_summary(window, tmp_path):
+    from stimstudio.gui.export_dialog import ExportDialog
+    dlg = ExportDialog(window, fmt="wav")
+    assert dlg.fmt == "wav" and dlg.summary_box.isVisibleTo(dlg)
+
+    def summary():
+        return {dlg.summary.itemAt(r, dlg.summary.ItemRole.LabelRole).widget().text():
+                dlg.summary.itemAt(r, dlg.summary.ItemRole.FieldRole).widget().text()
+                for r in range(dlg.summary.rowCount())}
+
+    rows = summary()
+    assert rows["Sample rate:"] == "48000 Hz" and "Continuous" in rows["Mode:"]
+    dlg.mode.setCurrentText("wavelet")
+    dlg.rate.setCurrentIndex(dlg.rate.findData(96000))
+    rows = summary()
+    assert rows["Sample rate:"] == "96000 Hz" and "Wavelet" in rows["Mode:"]
+    assert "Carrier:" in rows and "Tone pitch:" not in rows
+    dlg.format.setCurrentIndex(dlg.format.findData("hwl"))
+    assert not dlg.summary_box.isVisibleTo(dlg)
+    dlg.format.setCurrentIndex(dlg.format.findData("funscript"))
+    assert dlg.fs_row.isVisibleTo(dlg) and not dlg.mode.isVisibleTo(dlg)
+    dlg.reject()
+
+
+def test_export_dialog_funscript(window, tmp_path):
+    from stimstudio.gui.export_dialog import ExportDialog
+    dlg = ExportDialog(window, fmt="funscript")
+    dlg.fs_layout.setCurrentIndex(dlg.fs_layout.findData("single"))
+    dlg.path.setText(str(tmp_path / "show.funscript"))
+    (path,) = dlg.run()
+    assert path.name == "show.funscript"
+    assert [a.axis_id for a in load_funscript_axes(path)] == ["amp_a", "amp_b", "freq_a",
+                                                              "freq_b"]
+
+
+# ── funscript export ────────────────────────────────────────────────────────
+def test_funscript_simplify():
+    from stimstudio.io.funscript_export import lane_to_actions, simplify
+    t = np.arange(400) * 25.0
+    ramp = np.linspace(0, 100, 400)
+    assert list(simplify(t, ramp, 1.0)) == [0, 399]       # a straight line: two points
+    assert list(simplify(t, np.r_[np.zeros(5), np.ones(5)], 0.0)) == [0, 4, 5, 9]
+    v = np.abs(np.sin(np.arange(400) / 40.0 * 2 * np.pi * 0.5))
+    acts = lane_to_actions(v, 1.0)
+    assert 10 < len(acts) < 400 / 2
+    assert acts[0]["at"] == 0 and acts[-1]["at"] == 399 * 25
+    full = lane_to_actions(v, 0.0)
+    back = np.interp(np.arange(400) * 25, [a["at"] for a in acts], [a["pos"] for a in acts])
+    assert np.abs(back - np.rint(v * 100)).max() <= 1.0 + 1e-9
+    assert len(full) > len(acts)
+
+
+@pytest.mark.parametrize("layout, names", [
+    ("separate", ["x.amp_a.funscript", "x.amp_b.funscript", "x.freq_a.funscript",
+                  "x.freq_b.funscript"]),
+    ("single", ["x.funscript"]),
+])
+def test_funscript_export_roundtrip(tmp_path, layout, names):
+    from stimstudio.core.export import FunscriptSettings, written_paths
+    p = two_tracks()
+    render = render_project(p)
+    n = export_mix(p, tmp_path / "x.funscript", 1.0, 3.0,
+                   funscript=FunscriptSettings(layout, 0.5))
+    assert n == 80
+    paths = written_paths(tmp_path / "x.funscript", "funscript",
+                          FunscriptSettings(layout, 0.5))
+    assert sorted(q.name for q in paths) == sorted(names) and all(q.is_file() for q in paths)
+    doc = json.loads(paths[0].read_text(encoding="utf-8"))
+    assert doc["metadata"]["creator"].startswith("StimStudio") and doc["range"] == 100
+    axes = [ax for q in paths for ax in load_funscript_axes(q)]
+    mapping = auto_mapping(axes)
+    assert [axes[m.axis].axis_id for m in mapping] == ["amp_a", "amp_b", "freq_a", "freq_b"]
+    back = funscript_to_pulses(axes, mapping, FS, duration_ms=2000.0)
+    want = render.master[40:120]
+    assert back.shape == want.shape
+    assert np.abs(back - want).max() <= 0.011               # 1 % steps + 0.5 tolerance
+    times = [a["at"] for a in json.loads(paths[0].read_text())["actions"] or
+             json.loads(paths[0].read_text())["axes"][0]["actions"]]
+    assert times[0] == 0                                     # relative to the range start
+
+
+def test_funscript_stems(tmp_path):
+    from stimstudio.core.export import FunscriptSettings
+    written = export_stems(two_tracks(), tmp_path, "s", "funscript",
+                           funscript=FunscriptSettings("separate", 1.0))
+    assert len(written) == 4 * len(stem_tracks(two_tracks()))
+    assert all(p.is_file() and p.name.startswith("s - 0") for p in written)
+
+
+def test_describe_audio():
+    from stimstudio.core.export import describe_audio
+    p = two_tracks()
+    n = render_project(p).n
+    rows = dict(describe_audio(p, n, 1.0, 3.0, AudioSettings(sample_rate=48000), "wav"))
+    assert rows["Sample rate"] == "48000 Hz"
+    assert "96 000 samples" in rows["Duration"]
+    assert rows["Size"] == f"{(44 + 96000 * 6) / 1024:.1f} KB"
+    assert "500–1000 Hz" in rows["Tone pitch"]              # the continuous mode's default
+    assert "phase-true" in rows["Triphase"]
+    rows = dict(describe_audio(p, n, None, None,
+                               AudioSettings(mode="wavelet", freq_hz=(20, 80),
+                                             device_settings={"carrier": 800}), "flac",
+                               stems=3, from_panel=True))
+    assert "800 Hz" in rows["Carrier"] and "20–80 Hz" in rows["Burst rate"]
+    assert rows["Size"].startswith("≤") and "3 stem files" in rows["File"]
+    assert rows["Settings from"] == "the Output panel"
+    assert "mixed into" in rows["Triphase"]
+
+
 # ── recent files, autosave, recovery ────────────────────────────────────────
 def test_recent_files(window, tmp_path):
     path = str(tmp_path / "r.stimproj")

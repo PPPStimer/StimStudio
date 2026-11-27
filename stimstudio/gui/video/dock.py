@@ -94,6 +94,7 @@ class VideoPanel(QWidget):
         self.settings = app_settings()
         self.path = ""
         self.track_muted = False
+        self._shuttle_muted = False     # fast-forward mutes the video's sound
 
         # Qt Multimedia objects are created when the project first gets a video
         # (see _ensure_media): a window without video never starts the backend.
@@ -139,6 +140,25 @@ class VideoPanel(QWidget):
         self.full_btn.clicked.connect(self.toggle_fullscreen)
         bar.addWidget(self.full_btn)
 
+        # fast-forward row (a second row keeps the dock as narrow as before)
+        from .shuttle import SPEEDS, Shuttle
+        self.shuttle = Shuttle(doc, playback, end_s=self._content_end, parent=self)
+        self.shuttle.speedChanged.connect(self._on_shuttle_speed)
+        self.shuttle.positionChanged.connect(self._on_shuttle_position)
+        ff_bar = QHBoxLayout()
+        ff_bar.setContentsMargins(4, 0, 4, 2)
+        ff_bar.addWidget(QLabel("Fast-forward ▶▶"))
+        self.ff_buttons: dict[int, QToolButton] = {}
+        for speed in SPEEDS:
+            b = QToolButton(text=f"x{speed}", checkable=True)
+            b.setToolTip(f"Fast-forward ×{speed}: the cursor and the video run {speed}× faster. "
+                         "A playing output pauses (short fade) and resumes from the new spot "
+                         "when you press the button again. Esc cancels the resume.")
+            b.clicked.connect(lambda _c=False, s=speed: self.shuttle.toggle(s))
+            ff_bar.addWidget(b)
+            self.ff_buttons[speed] = b
+        ff_bar.addStretch()
+
         self.placeholder = QLabel()
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
@@ -150,6 +170,7 @@ class VideoPanel(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addLayout(bar)
+        lay.addLayout(ff_bar)
         lay.addLayout(self.stack, 1)
 
         self.volume.setValue(int(self.settings.value("video/volume", 80, int)))
@@ -218,6 +239,8 @@ class VideoPanel(QWidget):
 
     # ── timeline events ─────────────────────────────────────────────────────
     def _on_playhead(self, seconds: float) -> None:
+        if self.shuttle.busy:
+            return            # the fading output's last playheads: fast-forward drives now
         if seconds < 0:
             self.sync.stopped(self.doc.cursor_s)
         else:
@@ -225,6 +248,8 @@ class VideoPanel(QWidget):
         self._update_time(seconds if seconds >= 0 else self.doc.cursor_s)
 
     def _on_cursor(self, seconds: float) -> None:
+        if self.shuttle.active:
+            return
         if not self.sync.running:
             self._scrub_timer.start()
             self._update_time(seconds)
@@ -259,13 +284,40 @@ class VideoPanel(QWidget):
         self.placeholder.setText(text)
         self.stack.setCurrentWidget(self.placeholder)
 
+    # ── fast-forward ────────────────────────────────────────────────────────
+    def _content_end(self) -> float:
+        """Where fast-forward stops: the end of the stim or of the video, whichever is later."""
+        end = self.doc.project.duration_s()
+        if self.sync.has_clip:
+            end = max(end, self.sync.start_s + self.sync.duration_s
+                      - self.sync.offset_ms / 1000.0)
+        return max(0.0, end)
+
+    def _on_shuttle_speed(self, speed: int) -> None:
+        for s, b in self.ff_buttons.items():
+            b.setChecked(s == speed)
+        if speed:
+            self._shuttle_muted = True
+            self._apply_audio()
+            return
+        self._shuttle_muted = False
+        self._apply_audio()
+        # pause on the cursor's frame; a resumed output restarts the video at 1x
+        self.sync.stopped(self.doc.cursor_s)
+        self._update_time(self.doc.cursor_s)
+
+    def _on_shuttle_position(self, seconds: float) -> None:
+        if self.player is not None:
+            self.sync.playhead(seconds, rate=float(self.shuttle.speed or 1))
+        self._update_time(seconds)
+
     def _on_error(self, *_args) -> None:
         if self.path and self.player is not None:
             self.name_label.setText(f"{Path(self.path).name} — {self.player.errorString()}")
 
     # ── controls ────────────────────────────────────────────────────────────
     def _apply_audio(self, *_args) -> None:
-        muted = self.mute_btn.isChecked() or self.track_muted
+        muted = self.mute_btn.isChecked() or self.track_muted or self._shuttle_muted
         if self.audio is not None:
             self.audio.setMuted(muted)
             self.audio.setVolume(self.volume.value() / 100.0)
@@ -313,6 +365,7 @@ class VideoPanel(QWidget):
 
     def shutdown(self) -> None:
         """Stop and release the media backend before the window goes away."""
+        self.shuttle.cancel()
         if self.player is None:
             return
         self.set_fullscreen(False)

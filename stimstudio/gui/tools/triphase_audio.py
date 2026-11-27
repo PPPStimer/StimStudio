@@ -27,7 +27,7 @@ from ...audio import triphase_decode as td
 from ...audio.loader import AUDIO_EXTENSIONS, is_audio_file
 from ...core.pulse import FS
 from ...core.triphase import TRI_LANE_NAMES, Calibration
-from .. import theme
+from .. import metrics, theme
 from ..pattern.curves import Y_TICKS, lane_pen
 from ..settings import app_settings
 from ..widgets.master_preview import TimeAxisItem
@@ -75,12 +75,12 @@ class TriphaseAudioWindow(ToolWindow):
         self._restore()
         self._loading = False
         self.setAcceptDrops(True)
-        self.resize(980, 640)
+        metrics.fit_to_screen(self, 980, 640)
         self._sync()
 
     # ── layout ──────────────────────────────────────────────────────────────
     def _build(self) -> None:
-        lay = QVBoxLayout(self)
+        lay = QVBoxLayout(metrics.scroll_body(self))
         src = QHBoxLayout()
         src.addWidget(QLabel("Audio:"))
         self.source_label = QLabel("—")

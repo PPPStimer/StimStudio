@@ -31,8 +31,20 @@ TRACK_COLORS = ("#4ec9b0", "#569cd6", "#c586c0", "#dcdcaa", "#ce9178", "#9cdcfe"
                 "#b5cea8", "#d16969")
 
 
-def load_stylesheet() -> str:
-    return (RESOURCES / "qss" / "vscode_dark.qss").read_text(encoding="utf-8")
+def load_stylesheet(text_scale: float | None = None) -> str:
+    """The theme; font sizes times *text_scale* (default: the Interface size
+    below 100 %, see ``metrics.apply_ui_scale``), never under 10 px."""
+    import re
+
+    from . import metrics
+    qss = (RESOURCES / "qss" / "vscode_dark.qss").read_text(encoding="utf-8")
+    scale = metrics.text_scale() if text_scale is None else float(text_scale)
+    if abs(scale - 1.0) < 1e-3:
+        return qss
+
+    def smaller(m) -> str:
+        return f"font-size: {max(metrics.MIN_TEXT_PX, round(int(m.group(1)) * scale))}px"
+    return re.sub(r"font-size:\s*(\d+)px", smaller, qss)
 
 
 def app_icon() -> QIcon:

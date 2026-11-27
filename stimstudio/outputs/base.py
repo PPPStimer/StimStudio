@@ -206,8 +206,10 @@ class FrequencyMap:
     def with_hz(self, min_hz: float, max_hz: float) -> "FrequencyMap":
         """Rebuild from user-facing Hz bounds, inverting the subset arithmetic."""
         span = self.max_limit - self.min_limit
-        lo = clamp((min_hz - self.min_limit) / span, 0.0, 1.0)
-        hi = clamp((max_hz - self.min_limit) / span, 0.0, 1.0)
+        # a hair above the exact fraction: min_hz / max_hz truncate span × subset,
+        # and a float a hair below the integer would lose a whole Hz (1000 → 999)
+        lo = clamp((min_hz - self.min_limit + 1e-6) / span, 0.0, 1.0)
+        hi = clamp((max_hz - self.min_limit + 1e-6) / span, 0.0, 1.0)
         return replace(self, subset_start=min(lo, hi), subset_end=max(lo, hi))
 
 
@@ -309,6 +311,11 @@ class OutputSink:
     @property
     def playing(self) -> bool:
         return self._playing
+
+    @property
+    def stopping(self) -> bool:
+        """Still playing, but inside the graceful stop's fade-out."""
+        return self._playing and bool(self._stopping_at)
 
     def position(self) -> float:
         """Seconds into the window, wrapped when looping."""

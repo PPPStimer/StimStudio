@@ -31,6 +31,7 @@ class PlaybackController(QObject):
     batteryReported = pyqtSignal(int)
     logLine = pyqtSignal(str)
     devicesReported = pyqtSignal(list)         # Intiface device dicts
+    panicked = pyqtSignal()                    # PANIC: nothing may restart the output
 
     def __init__(self, doc, parent=None):
         super().__init__(parent)
@@ -166,6 +167,7 @@ class PlaybackController(QObject):
         if self.sink is not None:
             self.sink.stop(panic=True)
         self._stopped()
+        self.panicked.emit()
         self.message.emit("Output stopped (panic).")
 
     def _stopped(self) -> None:
@@ -244,7 +246,9 @@ class PlaybackController(QObject):
             self._apply_settings()    # reconfigure only on a real change (wavelet resets)
 
     def _on_cursor(self, seconds: float) -> None:
-        if self.playing:
+        # a fading-out output finishes where it is (fast-forward moves the cursor
+        # while the fade still runs)
+        if self.playing and not getattr(self.sink, "stopping", False):
             self.sink.seek(self._local_pulse(seconds))
 
     # ── events from the sink threads ────────────────────────────────────────

@@ -21,14 +21,14 @@ from ... import outputs
 from ...outputs import POWER_MAX, STATUS_CONNECTED, STATUS_CONNECTING, STATUS_DISCONNECTED
 from ...outputs.buttplug import ASSIGN_LABELS, ASSIGNMENTS, DEFAULT_URL as BUTTPLUG_URL
 from ...outputs.howl_remote import DEFAULT_PORT as HOWL_PORT
-from .. import theme
+from .. import metrics, theme
 from ..settings import app_settings
 
 #: Which settings rows each output shows.
 SETTINGS_ROWS = {
     "howl": ("remotehost", "remotekey", "remotescan", "freq", "swap"),
-    "continuous": ("sounddev", "freq", "shape"),
-    "wavelet": ("sounddev", "freq", "shape", "carrier", "width", "fade"),
+    "continuous": ("sounddev", "freq", "shape", "monitor"),
+    "wavelet": ("sounddev", "freq", "shape", "carrier", "width", "fade", "monitor"),
     "dryrun": ("freq", "log"),
     "buttplug": ("bpurl", "bpdevices", "bphint"),
 }
@@ -38,7 +38,7 @@ def _spin(lo, hi, value, slot, width=56) -> QSpinBox:
     s = QSpinBox()
     s.setRange(lo, hi)
     s.setValue(value)
-    s.setFixedWidth(width)
+    s.setMinimumWidth(width)   # not fixed: grows to hold its longest value
     s.setKeyboardTracking(False)
     s.valueChanged.connect(slot)
     return s
@@ -50,7 +50,7 @@ def _dspin(lo, hi, value, step, slot) -> QDoubleSpinBox:
     s.setSingleStep(step)
     s.setDecimals(2)
     s.setValue(value)
-    s.setFixedWidth(64)
+    s.setMinimumWidth(64)
     s.setKeyboardTracking(False)
     s.valueChanged.connect(slot)
     return s
@@ -62,7 +62,7 @@ def _row(title: str, *widgets, stretch: bool = False) -> QWidget:
     box.setContentsMargins(0, 0, 0, 0)
     box.setSpacing(4)
     caption = QLabel(title)
-    caption.setFixedWidth(84)
+    caption.setMinimumWidth(84)   # lines the rows up; longer text grows
     box.addWidget(caption)
     for w in widgets:
         box.addWidget(w, 1 if stretch else 0)
@@ -85,7 +85,8 @@ class DevicePanel(QScrollArea):
         self.settings = app_settings()
         self._suspend = 0
         self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # a narrow dock (small screen, large display scale) scrolls rather than cuts
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         body = QWidget()
         self.setWidget(body)
         self.box = QVBoxLayout(body)
@@ -100,6 +101,7 @@ class DevicePanel(QScrollArea):
         self._build_settings()
         self.box.addWidget(_rule())
         self._build_safety()
+        self._build_monitor()
         self.box.addStretch(1)
 
         self._scan_results: "queue.Queue[list[str]]" = queue.Queue()
@@ -215,11 +217,11 @@ class DevicePanel(QScrollArea):
             slider.valueChanged.connect(lambda _v, s=side: self._on_slider(s))
             spin = QSpinBox()
             spin.setRange(0, POWER_MAX)
-            spin.setFixedWidth(54)
+            spin.setMinimumWidth(54)
             spin.valueChanged.connect(lambda _v, s=side: self._on_spin(s))
             limit = QSpinBox()
             limit.setRange(0, POWER_MAX)
-            limit.setFixedWidth(54)
+            limit.setMinimumWidth(54)
             limit.setValue(int(self.settings.value(f"output/limit_{side}", POWER_MAX)))
             limit.setToolTip("Hard ceiling for this channel — the slider cannot pass it")
             limit.valueChanged.connect(lambda _v, s=side: self._on_limit(s))
@@ -233,21 +235,21 @@ class DevicePanel(QScrollArea):
         self.box.addLayout(grid)
 
     def _build_settings(self):
-        self.freq_min = _spin(1, 2000, 10, self._on_settings_changed)
-        self.freq_max = _spin(1, 2000, 100, self._on_settings_changed)
+        self.freq_min = _spin(1, 20000, 10, self._on_settings_changed)   # range: the output's
+        self.freq_max = _spin(1, 20000, 100, self._on_settings_changed)
         self.rows["freq"] = _row("Frequency", self.freq_min, QLabel(".."), self.freq_max,
                                  QLabel("Hz"))
         self.swap = QCheckBox("swap A ↔ B")
         self.swap.toggled.connect(self._on_settings_changed)
         self.rows["swap"] = _row("Channels", self.swap)
-        self.sound_dev = QComboBox()
+        self.sound_dev = metrics.shrinkable_combo(QComboBox())
         self.sound_dev.currentIndexChanged.connect(self._on_settings_changed)
         self.rows["sounddev"] = _row("Sound device", self.sound_dev, stretch=True)
         self.shape = QComboBox()
         self.shape.addItems(["sine", "square", "triangle", "trapezoid"])
         self.shape.currentIndexChanged.connect(self._on_settings_changed)
         self.rows["shape"] = _row("Wave shape", self.shape, stretch=True)
-        self.carrier = _spin(100, 8000, 1000, self._on_settings_changed, width=64)
+        self.carrier = _spin(100, 20000, 1000, self._on_settings_changed, width=64)
         self.rows["carrier"] = _row("Carrier", self.carrier, QLabel("Hz"))
         self.wl_width = _spin(1, 64, 5, self._on_settings_changed)
         self.rows["width"] = _row("Wavelet", self.wl_width, QLabel("cycles"))
@@ -275,7 +277,22 @@ class DevicePanel(QScrollArea):
         self.box.addLayout(row)
         hint = QLabel("Space — play / stop · Esc — instant stop (panic)")
         hint.setStyleSheet(f"color: {theme.TEXT_DIM};")
+        hint.setWordWrap(True)
         self.box.addWidget(hint)
+
+    def _build_monitor(self):
+        """Scope / spectrum / meters of the sound card signal (audio outputs only)."""
+        from .output_monitor import OutputMonitor
+        holder = QWidget()
+        box = QVBoxLayout(holder)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(4)
+        box.addWidget(_rule())
+        box.addWidget(QLabel("Output signal"))
+        self.monitor = OutputMonitor(self.pb)
+        box.addWidget(self.monitor)
+        self.rows["monitor"] = holder
+        self.box.addWidget(holder)
 
     # ── device ──────────────────────────────────────────────────────────────
     # ── Intiface devices ────────────────────────────────────────────────────
@@ -349,9 +366,11 @@ class DevicePanel(QScrollArea):
                 import sounddevice as sd
                 for index, dev in enumerate(sd.query_devices()):
                     if dev["max_output_channels"] >= 2:
-                        self.sound_dev.addItem(f"{index}: {dev['name']}"[:48], index)
+                        self.sound_dev.addItem(f"{index}: {dev['name']}", index)
             except Exception as exc:  # noqa: BLE001
                 self.pb.message.emit(f"Could not list sound devices: {exc}")
+            metrics.widen_popup(self.sound_dev)
+            self.sound_dev.setToolTip(self.sound_dev.currentText())
         finally:
             self._suspend -= 1
 

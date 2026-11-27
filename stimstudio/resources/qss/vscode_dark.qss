@@ -180,6 +180,26 @@ QToolButton {
 QToolButton:hover { background-color: #3a3d41; }
 QToolButton:checked { background-color: #094771; border-color: #007acc; }
 
+/* Tabs (tabbed docks, Browser, Effects): the native Windows style draws light
+   tabs, unreadable under this theme's light text. Active: blue; others: grey. */
+QTabWidget::pane { border: 1px solid #3c3c3c; top: -1px; }
+QTabBar { qproperty-drawBase: 0; }
+QTabBar::tab {
+    background-color: #3a3d41;
+    color: #ffffff;
+    border: none;
+    padding: 5px 12px;
+}
+QTabBar::tab:top, QTabBar::tab:bottom { margin-right: 2px; }
+QTabBar::tab:left, QTabBar::tab:right { margin-bottom: 2px; }
+QTabBar::tab:top { border-top-left-radius: 3px; border-top-right-radius: 3px; }
+QTabBar::tab:bottom { border-bottom-left-radius: 3px; border-bottom-right-radius: 3px; }
+QTabBar::tab:hover:!selected { background-color: #45494e; }
+QTabBar::tab:selected { background-color: #007acc; color: #ffffff; }
+QTabBar::tab:disabled { background-color: #2d2d2d; color: #858585; }
+QTabBar QToolButton { background-color: #3a3d41; border: none; border-radius: 0; }
+QTabBar QToolButton:hover { background-color: #45494e; }
+
 QTreeWidget {
     background-color: #252526;
     border: none;

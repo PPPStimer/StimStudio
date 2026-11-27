@@ -223,9 +223,9 @@ class Ruler(QWidget):
         marker = self.marker_at(pos.x(), pos.y())
         if marker is not None:
             self._marker_drag = None
-            self.editor.rename_marker(marker.id)
+            self.editor.edit_marker(marker.id)
         else:
-            self.editor.doc.add_marker(self._snapped(event))
+            self.editor.create_marker(self._snapped(event))
 
     def _snapped(self, event, exclude: str | None = None) -> float:
         t = self._time_at(event.position().x())

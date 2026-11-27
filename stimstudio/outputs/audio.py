@@ -46,6 +46,45 @@ def wave_shape(name: str, phase: np.ndarray, out: np.ndarray, duty: float = 0.25
         np.sin(phase, out=out)
 
 
+class ScopeTap:
+    """The last seconds of what the sound card received, for the output monitor
+    (3 s: the longest scope window, 1 s, plus room to find its trigger).
+
+    The audio callback writes, the GUI reads. There is no lock: `write` copies
+    into a preallocated ring and bumps `written` last, so a reader racing the
+    writer can at worst see one block that is half old, half new — fine for a
+    display, and the callback never waits or allocates.
+    """
+
+    def __init__(self, sr: int, seconds: float = 3.0):
+        self.sr = int(sr)
+        self.cap = max(BLOCK_FRAMES * 2, int(self.sr * seconds))
+        self.buf = np.zeros((self.cap, 2), dtype=np.float32)
+        self.written = 0
+
+    def write(self, left: np.ndarray, right: np.ndarray) -> None:
+        n = len(left)
+        if n <= 0:
+            return
+        pos = self.written % self.cap
+        first = min(n, self.cap - pos)
+        self.buf[pos:pos + first, 0] = left[:first]
+        self.buf[pos:pos + first, 1] = right[:first]
+        if first < n:
+            rest = n - first
+            self.buf[:rest, 0] = left[first:]
+            self.buf[:rest, 1] = right[first:]
+        self.written += n
+
+    def latest(self, n: int) -> np.ndarray:
+        """A copy of the newest *n* frames, shape (n, 2); zeros before the first write."""
+        n = max(1, min(int(n), self.cap))
+        end = self.written % self.cap
+        if end >= n:
+            return self.buf[end - n:end].copy()
+        return np.concatenate((self.buf[self.cap - (n - end):], self.buf[:end]))
+
+
 class AudioSink(OutputSink):
     """Shared PortAudio plumbing: the stream, the block clock, the pulse lerp."""
 
@@ -61,6 +100,7 @@ class AudioSink(OutputSink):
         self._samples = 0            # samples emitted since Play
         self._start_pulse = 0.0
         self._scratch: dict[str, np.ndarray] = {}
+        self.scope: ScopeTap | None = None
 
     # ── settings ────────────────────────────────────────────────────────
     def configure(self, settings: dict):
@@ -157,6 +197,9 @@ class AudioSink(OutputSink):
             outdata.fill(0.0)
             if not self._playing:
                 self._samples = 0
+            if self.scope is not None:
+                silent = self._scratch["silence"][:frames]
+                self.scope.write(silent, silent)
             return
 
         live = self.source.live
@@ -184,6 +227,8 @@ class AudioSink(OutputSink):
         np.clip(right, -1.0, 1.0, out=right)
         outdata[:, 0] = left       # channel A is the left channel, as in Howl
         outdata[:, 1] = right
+        if self.scope is not None:
+            self.scope.write(left, right)
 
         self._samples += frames
         self._cursor = self._start_pulse + self._samples * PULSE_RATE / self._sr
@@ -239,7 +284,9 @@ class AudioSink(OutputSink):
             "low":  np.zeros((n, 4), dtype=np.float32),
             "high": np.zeros((n, 4), dtype=np.float32),
             "rows": np.zeros((n, 4), dtype=np.float32),
+            "silence": np.zeros(n, dtype=np.float32),
         }
+        self.scope = ScopeTap(self._sr)
 
     # ── implemented per mode ────────────────────────────────────────────
     def _reset_voices(self):
@@ -259,9 +306,9 @@ class ContinuousSink(AudioSink):
 
     label = "Audio (continuous)"
     supports_triphase = True
-    # The frequency track spans the audible carrier range directly, so the whole
-    # 0..1 curve is usable — hence a full-width subset, unlike the Coyotes.
-    default_freq_map = FrequencyMap(500, 1000, 0.0, 1.0)
+    # The frequency track spans the tone's pitch range directly (500..1000 Hz by
+    # default); the range itself can be set anywhere in the audible 20 Hz..20 kHz.
+    default_freq_map = FrequencyMap(20, 20000).with_hz(500, 1000)
 
     def __init__(self, source, events):
         super().__init__(source, events)

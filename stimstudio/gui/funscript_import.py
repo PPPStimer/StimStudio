@@ -15,7 +15,7 @@ from ..core.pulse import FS
 from ..io.funscript import (INTERP_HOLD, INTERP_LINEAR, INTERP_SMOOTH, VALUE_POSITION,
                             VALUE_SPEED, ChannelMap, auto_mapping, axes_duration_ms,
                             funscript_to_pulses, load_funscript_axes)
-from . import theme
+from . import metrics, theme
 
 PULSE_TARGETS = ("Amp L", "Amp R", "Freq L", "Freq R")
 
@@ -34,7 +34,7 @@ class FunscriptImportDialog(QDialog):
     def __init__(self, paths, track_kind: str = "standard", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Import funscript")
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(metrics.cap_to_screen(640, parent))
         self.axes, errors = load_axes(paths)
         if errors:
             QMessageBox.warning(self, "Import funscript", "\n".join(errors))

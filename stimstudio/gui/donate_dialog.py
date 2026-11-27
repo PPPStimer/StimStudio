@@ -30,6 +30,8 @@ from PyQt6.QtWidgets import (
     QProgressBar, QPushButton, QVBoxLayout, QWidget,
 )
 
+from . import metrics
+
 # ---------------------------------------------------------------- settings
 
 APP_NAME = "StimStudio"   # sent as the User-Agent
@@ -205,7 +207,7 @@ class HeroDialog(QDialog):
         super().__init__(parent)
         self.setStyleSheet(_DIALOG_STYLE)
         self.setWindowTitle("Thank you!")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(metrics.cap_to_screen(480, parent))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 20)
@@ -249,7 +251,7 @@ class DonateDialog(QDialog):
         self.hero_checked.connect(self._on_hero_checked)
         self.setStyleSheet(_DIALOG_STYLE)
         self.setWindowTitle(str(data.get("title") or "Support development"))
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(metrics.cap_to_screen(520, parent))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 16)

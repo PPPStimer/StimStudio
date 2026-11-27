@@ -203,7 +203,13 @@ def test_export_dialog(window, tmp_path, stopping_at_export, fmt, stems, stops):
 def test_menu_audio_export_stops_the_output_first(window, tmp_path, stopping_at_export,
                                                   monkeypatch):
     target = str(tmp_path / "out.wav")
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (target, ""))
+
+    def fake_exec(dlg):
+        dlg.path.setText(target)
+        dlg.run()
+        return dlg.result()
+
+    monkeypatch.setattr(ExportDialog, "exec", fake_exec)
     assert window.playback.play()
     window.export_audio()
     assert stopping_at_export == [True]

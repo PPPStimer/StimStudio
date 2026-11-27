@@ -6,7 +6,8 @@
                                           one file per track
     demo    OUT_DIR                       write demo.stimproj + demo.hwl
     info    FILE                          summarize a .hwl / .parthwl / .stimproj
-    gui     [PROJECT.stimproj]            start the editor (same as ``StimStudio.pyw``)
+    gui     [PROJECT.stimproj] [--scale X]  start the editor (same as ``StimStudio.pyw``);
+                                          --scale 1.5 makes the whole interface 1.5× larger
 """
 
 from __future__ import annotations
@@ -106,7 +107,8 @@ def cmd_info(args) -> int:
 
 def cmd_gui(args) -> int:
     from .gui.app import run
-    return run(["stimstudio"] + ([args.project] if args.project else []))
+    scale = ["--scale", args.scale] if args.scale else []
+    return run(["stimstudio"] + scale + ([args.project] if args.project else []))
 
 
 def main(argv=None) -> int:
@@ -138,6 +140,7 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_info)
     p = sub.add_parser("gui", help="start the editor")
     p.add_argument("project", nargs="?")
+    p.add_argument("--scale", help="interface size on top of the display scale: 1.5 or 150%%")
     p.set_defaults(fn=cmd_gui)
     args = parser.parse_args(argv)
     return args.fn(args)

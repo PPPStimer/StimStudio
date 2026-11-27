@@ -656,24 +656,39 @@ class SongEditor(QWidget):
         b = after[0] if after else max(self.project.duration_s(), a)
         return (a, b) if b - a > 1.0 / FS else None
 
-    def rename_marker(self, marker_id: str) -> None:
-        from PyQt6.QtWidgets import QInputDialog
-        m = self.doc.find_marker(marker_id)
-        if m is None:
-            return
-        name, ok = QInputDialog.getText(self, "Rename marker", "Name:", text=m.name)
-        if ok and name != m.name:
-            self.doc.set_marker_attrs(marker_id, text="Rename marker", name=name)
+    def create_marker(self, t_s: float):
+        """Ask for a name and colour, then drop a marker at *t_s* (Cancel: none)."""
+        from ..marker_dialog import DEFAULT_COLOR, LAST_COLOR_KEY, MarkerDialog
+        from ..settings import app_settings
+        settings = app_settings()
+        default = f"Marker {len(self.doc.project.markers) + 1}"
+        dlg = MarkerDialog(self, "New marker", default,
+                           str(settings.value(LAST_COLOR_KEY, DEFAULT_COLOR)))
+        if dlg.exec() != MarkerDialog.DialogCode.Accepted:
+            return None
+        name, color = dlg.values()
+        settings.setValue(LAST_COLOR_KEY, color)
+        return self.doc.add_marker(t_s, name or default, color)
 
-    def recolor_marker(self, marker_id: str) -> None:
-        from PyQt6.QtGui import QColor
-        from PyQt6.QtWidgets import QColorDialog
+    def edit_marker(self, marker_id: str) -> None:
+        """Name and colour of a marker, changed as one undo step."""
+        from ..marker_dialog import LAST_COLOR_KEY, MarkerDialog
+        from ..settings import app_settings
         m = self.doc.find_marker(marker_id)
         if m is None:
             return
-        color = QColorDialog.getColor(QColor(m.color), self, "Marker colour")
-        if color.isValid():
-            self.doc.set_marker_attrs(marker_id, text="Marker colour", color=color.name())
+        dlg = MarkerDialog(self, "Edit marker", m.name, m.color)
+        if dlg.exec() != MarkerDialog.DialogCode.Accepted:
+            return
+        name, color = dlg.values()
+        name = name or m.name
+        if (name, color) != (m.name, m.color):
+            app_settings().setValue(LAST_COLOR_KEY, color)
+            self.doc.set_marker_attrs(marker_id, text="Edit marker", name=name, color=color)
+
+    # older entry points (ruler, menus)
+    rename_marker = edit_marker
+    recolor_marker = edit_marker
 
     def marker_menu(self, marker_id: str, global_pos) -> None:
         m = self.doc.find_marker(marker_id)
@@ -684,8 +699,7 @@ class SongEditor(QWidget):
         menu.addAction("Loop to next marker",
                        lambda: self.loopRegionEdited.emit(self.span_between_markers(m.t_s)))
         menu.addSeparator()
-        menu.addAction("Rename…", lambda: self.rename_marker(marker_id))
-        menu.addAction("Colour…", lambda: self.recolor_marker(marker_id))
+        menu.addAction("Name and colour…", lambda: self.edit_marker(marker_id))
         menu.addSeparator()
         menu.addAction("Delete marker", lambda: self.doc.remove_markers([marker_id]))
         menu.exec(global_pos)

@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog, 
                              QTreeWidgetItem, QVBoxLayout)
 
 from ..core import media as md
-from . import theme
+from . import metrics, theme
 from .audio_import import run_job
 
 MISSING_COLOR = "#f48771"
@@ -107,7 +107,7 @@ class CollectDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         lay.addWidget(self.buttons)
-        self.resize(560, 0)
+        self.resize(metrics.cap_to_screen(560, parent), 0)
         self._update()
 
     def media_dir(self) -> str:
@@ -183,7 +183,7 @@ class ProjectMediaDialog(QDialog):
         close.clicked.connect(self.accept)
         row.addWidget(close)
         lay.addLayout(row)
-        self.resize(820, 360)
+        metrics.fit_to_screen(self, 820, 360)
         doc.modelChanged.connect(self.refresh)
         doc.pathChanged.connect(lambda _p: self.refresh())
         self.refresh()

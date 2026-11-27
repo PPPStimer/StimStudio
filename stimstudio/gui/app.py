@@ -7,6 +7,9 @@ import sys
 
 def run(argv: list[str] | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
+    from .metrics import apply_ui_scale
+
+    argv = apply_ui_scale(argv)    # --scale / View → Interface size, before the QApplication
     from .gl import configure_opengl
 
     configure_opengl()  # before the QApplication: GL surface format, shared contexts
@@ -25,7 +28,7 @@ def run(argv: list[str] | None = None) -> int:
     app.setApplicationName("StimStudio")
     app.setOrganizationName("StimStudio")
     app.setWindowIcon(app_icon())  # inherited by every window, dialog and floating dock
-    app.setStyleSheet(load_stylesheet())
+    app.setStyleSheet(load_stylesheet())        # smaller text below 100 % Interface size
     window = MainWindow()
     paths = [a for a in argv[1:] if not a.startswith("-")]
     window.show()

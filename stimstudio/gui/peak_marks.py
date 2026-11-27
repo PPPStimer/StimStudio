@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QD
 
 from ..core.beats import PEAK_LABELS, PEAK_METHODS, detect_peaks, marks_from_peaks
 from ..core.pulse import FS
-from . import theme
+from . import metrics, theme
 from .pattern.curves import Y_TICKS
 
 DEFAULTS = {"method": "cross", "level": 0.5, "min_gap_s": 0.1, "hysteresis": 0.05,
@@ -33,10 +33,10 @@ class PeakMarksDialog(QDialog):
     def __init__(self, signal: np.ndarray, title: str = "", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Beat marks from peaks")
-        self.resize(820, 420)
+        metrics.fit_to_screen(self, 820, 420)
         self.signal = np.asarray(signal, dtype=np.float64)
         top = float(self.signal.max()) if len(self.signal) else 1.0
-        lay = QVBoxLayout(self)
+        lay = QVBoxLayout(metrics.scroll_body(self))
         if title:
             head = QLabel(title)
             head.setStyleSheet(f"color: {theme.TEXT_DIM};")

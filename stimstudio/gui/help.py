@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QDialog, QTextBrowser, QVBoxLayout
 
+from . import metrics
+
 from .. import __version__
 
 MOUSE = (
@@ -27,13 +29,17 @@ MOUSE = (
                       "Shift sets velocity · Del deletes · right-click pins a pool clip"),
     ("Video", "Drop a video file on the timeline · drag the video clip to line it up · "
               "double-click it for the Video window · ▦ / ♫ in its header hide frames / sound · "
-              "F11 full screen on the dock's monitor"),
+              "F11 full screen on the dock's monitor · x2 / x5 / x10 fast-forward (output "
+              "pauses, resumes when you press the button again)"),
     ("Color rhythm", "Tools → Color rhythm from video: drag around the outer edge of the "
                      "target · click a colour on the frame to pick / drop it · Create clip → "
                      "right-click → Beat marks from peaks"),
-    ("Markers", "Double-click the ruler to add · drag a flag to move · click it to jump · "
-                "double-click to rename · right-click for colour / loop / delete · clips and "
-                "the cursor stick to markers"),
+    ("Markers", "Double-click the ruler (or Shift+M) to add with a name and colour · drag a "
+                "flag to move · click it to jump · double-click to edit name and colour · "
+                "right-click for loop / delete · clips and the cursor stick to markers"),
+    ("Output signal", "Output dock, audio outputs: scope (window, trigger A/B, Hold), "
+                      "spectrum, XY (Lissajous, phase of B vs A), RMS / peak meters of what the "
+                      "sound card receives"),
     ("Overview bar", "Click or drag to scroll the timeline · wheel to zoom"),
     ("Record pad", "Hold the left button and move: up = level, right = frequency (triphase: "
                    "position) · release springs to 0 unless Hold · keys 1–9 = 10–90 %, 0 = off "
@@ -56,7 +62,7 @@ class ShortcutsDialog(QDialog):
     def __init__(self, window):
         super().__init__(window)
         self.setWindowTitle("Keyboard and mouse")
-        self.resize(560, 640)
+        metrics.fit_to_screen(self, 560, 640)
         lay = QVBoxLayout(self)
         view = QTextBrowser()
         lay.addWidget(view)
@@ -74,7 +80,7 @@ class ShortcutsDialog(QDialog):
 def about_text() -> str:
     return (f"<b>StimStudio {__version__}</b><br>Multitrack e-stim pattern studio.<br><br>"
             "Outputs: Coyote 3 via the Howl app (remote API), audio (continuous / wavelet, "
-            "triphase with phase), Intiface / Buttplug devices, .hwl and WAV/FLAC "
+            "triphase with phase), Intiface / Buttplug devices, .hwl, WAV/FLAC and funscript "
             "export.<br><br>"
             "Built on ports of <i>Howl</i> (activities, output formulas), <i>WaveHowl</i> "
             "(generators) and <i>HWL Viewer</i> (outputs, effects, audio conversion, "

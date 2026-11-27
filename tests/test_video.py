@@ -5,7 +5,7 @@ import os
 
 import numpy as np
 import pytest
-from PyQt6.QtCore import QPointF, Qt
+from PyQt6.QtCore import QObject, QPointF, Qt, pyqtSignal
 
 from stimstudio.core.export import stem_tracks
 from stimstudio.core.model import Clip, GeneratorSource, Project, Track, VideoFileSource
@@ -222,6 +222,164 @@ def test_sync_stop_returns_to_cursor():
     sync.clear()
     sync.scrub(15.0)
     assert player.seeks[-1] == 10000                     # no clip: untouched
+
+
+def test_sync_fast_forward_rate():
+    sync, player, _, clock = make_sync()
+    sync.playhead(12.0, rate=5.0)                         # enters at 5×
+    assert player.playing and player.rate == 5.0 and player.seeks[-1] == 2000
+    n = len(player.seeks)
+    clock.t = 1.0
+    player.pos = 7000 + 400                               # 400 ms ahead: a nudge at 5×, no seek
+    sync.playhead(17.0, rate=5.0)
+    assert len(player.seeks) == n and player.rate == pytest.approx(5.0 * (1 - NUDGE))
+    player.pos = 8000 + 50
+    sync.playhead(18.0, rate=5.0)
+    assert player.rate == 5.0
+    player.pos = 20000                                     # far off: seek
+    sync.playhead(19.0, rate=5.0)
+    assert player.seeks[-1] == 9000
+    clock.t = 2.0
+    player.pos = 10000
+    sync.playhead(20.0)                                    # back to normal playback
+    assert player.rate == 1.0
+
+
+# ── fast-forward (shuttle) ──────────────────────────────────────────────────
+class FakeDoc(QObject):
+    cursorChanged = pyqtSignal(float)
+
+    def __init__(self):
+        super().__init__()
+        self.cursor_s = 0.0
+
+    def set_cursor(self, s):
+        s = max(0.0, round(float(s) * 40) / 40)
+        if s != self.cursor_s:
+            self.cursor_s = s
+            self.cursorChanged.emit(s)
+
+
+class FakePlayback(QObject):
+    playingChanged = pyqtSignal(bool)
+    panicked = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.playing = False
+        self.pos = 0.0
+        self.stops = 0
+        self.plays = 0
+
+    def position_s(self):
+        return self.pos if self.playing else -1.0
+
+    def stop(self):
+        self.stops += 1                # fades: still "playing" until the test says so
+
+    def play(self):
+        self.plays += 1
+        self.playing = True
+        self.playingChanged.emit(True)
+        return True
+
+
+def make_shuttle(qapp, end=100.0):
+    from stimstudio.gui.video.shuttle import Shuttle
+    doc, pb, clock = FakeDoc(), FakePlayback(), Clock()
+    sh = Shuttle(doc, pb, end_s=lambda: end, clock=clock)
+    sh.timer.stop()
+    sh.timer.start = lambda *a: None          # ticks are driven by hand
+    return sh, doc, pb, clock
+
+
+def test_shuttle_runs_cursor_at_speed(qapp):
+    sh, doc, pb, clock = make_shuttle(qapp)
+    doc.set_cursor(10.0)
+    seen = []
+    sh.positionChanged.connect(seen.append)
+    sh.toggle(5)
+    assert sh.active and sh.speed == 5 and pb.stops == 0 and not sh.resume
+    clock.t = 2.0
+    sh.tick()
+    assert doc.cursor_s == 20.0 and seen[-1] == pytest.approx(20.0)
+    sh.toggle(10)                                          # change speed: re-anchored
+    clock.t = 3.0
+    sh.tick()
+    assert doc.cursor_s == 30.0
+    doc.set_cursor(50.0)                                   # the user clicks the timeline
+    clock.t = 3.5
+    sh.tick()
+    assert doc.cursor_s == 55.0
+    sh.toggle(10)                                          # same button: off, nothing to resume
+    assert not sh.active and pb.plays == 0
+
+
+def test_shuttle_pauses_output_and_resumes_after_fade(qapp):
+    sh, doc, pb, clock = make_shuttle(qapp)
+    pb.playing, pb.pos = True, 12.0
+    sh.toggle(2)
+    assert pb.stops == 1 and sh.resume and doc.cursor_s == 12.0
+    clock.t = 1.0
+    sh.tick()
+    assert doc.cursor_s == 14.0
+    sh.toggle(2)                                           # off while the fade still runs
+    assert pb.plays == 0 and sh.busy and not sh.active
+    sh.tick()
+    assert pb.plays == 0
+    pb.playing = False                                     # fade done
+    sh.tick()
+    assert pb.plays == 1 and not sh.busy
+    played = []
+    sh2, doc2, pb2, _ = make_shuttle(qapp)
+    sh2.play_fn = lambda: played.append(doc2.cursor_s)     # MainWindow's safety-checked play
+    pb2.playing, pb2.pos = True, 3.0
+    sh2.toggle(5)
+    pb2.playing = False
+    sh2.toggle(5)
+    assert played == [3.0] and pb2.plays == 0
+
+
+def test_shuttle_panic_and_end_never_resume(qapp):
+    sh, doc, pb, clock = make_shuttle(qapp, end=20.0)
+    pb.playing, pb.pos = True, 5.0
+    sh.toggle(10)
+    pb.panicked.emit()                                     # Esc
+    assert not sh.busy and not sh.resume
+    pb.playing = False
+    sh.tick()
+    assert pb.plays == 0
+    pb.playing, pb.pos = True, 5.0
+    sh.toggle(10)
+    pb.playing = False
+    clock.t = 5.0                                          # 5 + 50 s > end
+    sh.tick()
+    assert not sh.busy and doc.cursor_s == 20.0 and pb.plays == 0
+
+
+def test_shuttle_ends_when_output_starts(qapp):
+    sh, doc, pb, clock = make_shuttle(qapp)
+    sh.toggle(2)
+    pb.play()                                              # Space / Record while fast-forwarding
+    assert not sh.busy and pb.plays == 1
+
+
+def test_video_panel_fast_forward_buttons(window):
+    panel = window.video
+    window.doc.set_cursor(1.0)
+    panel.ff_buttons[5].click()
+    assert panel.shuttle.speed == 5 and panel.ff_buttons[5].isChecked()
+    assert not panel.ff_buttons[2].isChecked()
+    panel.ff_buttons[2].click()
+    assert panel.shuttle.speed == 2 and not panel.ff_buttons[5].isChecked()
+    panel.ff_buttons[2].click()
+    assert not panel.shuttle.active and not any(b.isChecked() for b in panel.ff_buttons.values())
+    # PANIC cancels fast-forward and its resume
+    assert window.playback.play()
+    panel.ff_buttons[10].click()
+    assert panel.shuttle.resume
+    window.a_panic.trigger()
+    assert not panel.shuttle.busy and not window.playback.playing
 
 
 # ── media helpers ───────────────────────────────────────────────────────────

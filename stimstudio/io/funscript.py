@@ -39,7 +39,15 @@ AXIS_LABELS: dict[str, str] = {
     "V0": "V0 vibrate",
     "V1": "V1 pump",
     "V2": "V2 valve",
+    # StimStudio's own export (io/funscript_export.py)
+    "amp_a": "Amp A",
+    "amp_b": "Amp B",
+    "freq_a": "Freq A",
+    "freq_b": "Freq B",
 }
+
+#: Axis ids written by StimStudio, in pulse-column order.
+STIM_AXES = ("amp_a", "amp_b", "freq_a", "freq_b")
 
 INTERP_LINEAR = "linear"
 INTERP_HOLD   = "hold"
@@ -290,7 +298,19 @@ class ChannelMap:
 
 def auto_mapping(axes: list[FunscriptAxis]) -> list[ChannelMap]:
     """HWL Viewer's default: axis 0 → both amplitudes (or 0 / 1 when there are two),
-    axes 2 / 3 → frequencies; frequency columns without an axis sit at 0.5."""
+    axes 2 / 3 → frequencies; frequency columns without an axis sit at 0.5.
+
+    Files exported by StimStudio (axis ids ``amp_a`` … ``freq_b``) go back onto
+    their own lanes."""
+    ids = [ax.axis_id.lower() for ax in axes]
+    if any(i in STIM_AXES for i in ids):
+        out = []
+        for col, stim_id in enumerate(STIM_AXES):
+            if stim_id in ids:
+                out.append(ChannelMap(axis=ids.index(stim_id)))
+            else:
+                out.append(ChannelMap(axis=None, out_min=0.5 if col >= 2 else 0.0))
+        return out
     picks = [0, 1 if len(axes) > 1 else 0, 2, 3]
     out = []
     for col, idx in enumerate(picks):

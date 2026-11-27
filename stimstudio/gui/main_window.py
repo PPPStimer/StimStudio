@@ -6,10 +6,11 @@ from pathlib import Path
 
 import numpy as np
 from PyQt6.QtCore import QEvent, Qt, QTimer
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QKeySequence
 from PyQt6.QtWidgets import (QApplication, QComboBox, QDialog, QDockWidget, QDoubleSpinBox,
-                             QFileDialog, QInputDialog, QLabel, QMainWindow, QMessageBox,
-                             QToolBar, QToolButton, QWidget)
+                             QAbstractScrollArea, QFileDialog, QFrame, QInputDialog, QLabel,
+                             QMainWindow, QMessageBox, QScrollArea, QTabBar, QToolBar,
+                             QToolButton, QWidget)
 
 from ..core.model import AudioFileSource, Clip, PulseDataSource, Track
 from ..core.pulse import FS, n_pulses
@@ -18,7 +19,7 @@ from ..io.hwl import read_hwl, write_hwl
 from ..io.parthwl import clip_to_part, load_parthwl, part_to_clip, save_parthwl
 from ..io.project_file import EXTENSION
 from . import commands as cmd
-from . import theme
+from . import metrics, theme
 from .document import ProjectDocument
 from .pattern.editor import PatternEditor
 from .playback import PlaybackController
@@ -41,7 +42,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.doc = doc or ProjectDocument()
         self.settings = app_settings()
-        self.resize(1500, 900)
+        metrics.fit_to_screen(self, 1500, 900, frac=0.95)
+        self._shown_once = False
         self.clipboard: list[tuple[str, Clip]] = []
         self._tool_windows: dict = {}               # Tools menu windows by tool id
 
@@ -115,6 +117,10 @@ class MainWindow(QMainWindow):
         self.editor.videoAnalysisRequested.connect(self.analyse_video)
         self.inspector.videoRequested.connect(lambda: self.open_video())
         self.a_panic.triggered.connect(lambda: self.video.set_fullscreen(False))
+        shuttle = self.video.shuttle
+        shuttle.play_fn = self._resume_after_shuttle
+        shuttle.positionChanged.connect(self._on_shuttle_position)
+        self.a_stop.triggered.connect(shuttle.cancel)
         self.video.openRequested.connect(lambda: self.open_video())
         self.editor.savePresetRequested.connect(self.save_clip_preset)
         self.browser.presets.presetActivated.connect(self._add_preset_at_cursor)
@@ -164,12 +170,31 @@ class MainWindow(QMainWindow):
     def _dock(self, title, widget, area, name) -> QDockWidget:
         dock = QDockWidget(title, self)
         dock.setObjectName(name)
+        if not isinstance(widget, QAbstractScrollArea):
+            # a dock as small as the screen needs: its contents scroll instead of
+            # pushing the window past the screen (1920×1080 at 150 % is 1280×720)
+            scroll = QScrollArea()
+            scroll.setObjectName("dockScroll")
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(widget)
+            widget = scroll
         dock.setWidget(widget)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
                          | QDockWidget.DockWidgetFeature.DockWidgetFloatable
                          | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(area, dock)
+        dock.dockLocationChanged.connect(lambda _a: QTimer.singleShot(0, self._unelide_dock_tabs))
         return dock
+
+    def _unelide_dock_tabs(self):
+        """Whole names on the tabs of tabbed docks ("Insp…", "S…" in a narrow
+        dock say nothing): scroll arrows when they do not fit. The main window
+        makes these tab bars itself, anew when docks are regrouped."""
+        for bar in self.findChildren(QTabBar):
+            if bar.parent() is self:
+                bar.setElideMode(Qt.TextElideMode.ElideNone)
+                bar.setUsesScrollButtons(True)
 
     def _action(self, text, slot, shortcut=None, tip=None) -> QAction:
         a = QAction(text, self)
@@ -253,6 +278,8 @@ class MainWindow(QMainWindow):
                                      [m.id for m in self.doc.project.markers],
                                      "Clear markers"))
         self.a_export_audio = A("Export &audio (WAV / FLAC)…", self.export_audio)
+        self.a_export_funscript = A("Export &funscript…", self.export_funscript, None,
+                                    "Amplitude and frequency of channels A and B as funscript")
         self.a_export = A("E&xport…", self.show_export_dialog, "Ctrl+Shift+E",
                           "Export .hwl or audio: whole project, loop region or selection; "
                           "mix or per-track stems")
@@ -319,8 +346,16 @@ class MainWindow(QMainWindow):
                              spacer.sizePolicy().verticalPolicy())
         tb.addWidget(spacer)
         tb.addAction(self.a_export_hwl)
-        tb.addSeparator()
-        panic = QToolButton()
+        # PANIC on a bar of its own: a narrow window (a small screen, a large
+        # display scale) folds the transport bar's last buttons into its » menu,
+        # and PANIC must stay in sight
+        tb = QToolBar("Panic")
+        tb.setObjectName("panicBar")
+        tb.setMovable(False)
+        tb.setFloatable(False)
+        tb.toggleViewAction().setEnabled(False)       # cannot be hidden either
+        self.addToolBar(tb)
+        self.panic_button = panic = QToolButton()
         panic.setDefaultAction(self.a_panic)
         panic.setText("■ PANIC  Esc")
         panic.setStyleSheet(f"QToolButton {{ background: {theme.DANGER}; color: white; "
@@ -336,7 +371,8 @@ class MainWindow(QMainWindow):
                   self.a_open_video, self.a_import_audio, self.a_import_funscript,
                   self.a_import_beats, self.a_import_hwl,
                   self.a_import_part, None, self.a_export, self.a_export_hwl,
-                  self.a_export_audio, self.a_export_part, None, self.a_quit):
+                  self.a_export_audio, self.a_export_funscript, self.a_export_part, None,
+                  self.a_quit):
             if a == "recent":
                 self.recent_menu = m.addMenu("Open &recent")
                 self.recent_menu.aboutToShow.connect(self._fill_recent)
@@ -371,10 +407,44 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         for dock in self.findChildren(QDockWidget):
             m.addAction(dock.toggleViewAction())
+        m.addSeparator()
+        self._build_ui_scale_menu(m.addMenu("Interface &size"))
         m = mb.addMenu("&Help")
         m.addAction(self.a_shortcuts)
         m.addAction(self.a_support)
         m.addAction(self.a_about)
+
+    def _build_ui_scale_menu(self, menu):
+        """View → Interface size: everything larger or smaller than the Windows
+        display scale; applied at the next start (Qt reads it before any window)."""
+        menu.setToolTipsVisible(True)
+        saved = metrics.parse_scale(self.settings.value(metrics.UI_SCALE_KEY, 100)) or 1.0
+        saved = round(saved * 100)
+        group = QActionGroup(self)
+        group.setExclusive(True)
+        for pct in metrics.UI_SCALES:
+            a = QAction(f"{pct} %" + ("  (as Windows)" if pct == 100 else ""), self)
+            a.setCheckable(True)
+            a.setChecked(pct == saved)
+            if pct < 100:
+                a.setToolTip("Smaller text; the rest keeps the Windows display scale "
+                             "(Qt cannot draw below it without display faults)")
+            a.triggered.connect(lambda _on=False, p=pct: self._set_ui_scale(p))
+            group.addAction(a)
+            menu.addAction(a)
+        menu.addSeparator()
+        now = QAction(f"Now: {metrics.ui_scale_percent()} % — changes apply after a restart",
+                      self)
+        now.setEnabled(False)
+        menu.addAction(now)
+
+    def _set_ui_scale(self, pct: int):
+        self.settings.setValue(metrics.UI_SCALE_KEY, int(pct))
+        if pct == metrics.ui_scale_percent():
+            self.statusBar().showMessage(f"Interface size {pct} %.", 5000)
+        else:
+            self.statusBar().showMessage(
+                f"Interface size {pct} % — takes effect when StimStudio is restarted.", 10000)
 
     # ── state updates ───────────────────────────────────────────────────────
     def _on_model(self):
@@ -409,6 +479,15 @@ class MainWindow(QMainWindow):
                 self.editor.ensure_visible(t)
         else:
             self.time_label.setText(theme.format_time(self.doc.cursor_s))
+
+    def _on_shuttle_position(self, t):
+        if self.a_follow.isChecked():
+            self.editor.ensure_visible(t)
+
+    def _resume_after_shuttle(self):
+        """Fast-forward ended where the output had been playing: start it again."""
+        if self.safety_ok("play"):
+            self.playback.play()
 
     def _on_playing(self, playing):
         self.a_play.setText("&Pause" if playing else "&Play")
@@ -646,9 +725,11 @@ class MainWindow(QMainWindow):
         return tracks
 
     def add_marker_at_cursor(self):
-        m = self.doc.add_marker(self.doc.cursor_s)
-        self.statusBar().showMessage(f"{m.name} at {theme.format_time(m.t_s)} — "
-                                     "double-click its flag to rename", 3000)
+        t = self.doc.cursor_s                 # where Shift+M was pressed, not after the dialog
+        m = self.editor.create_marker(t)
+        if m is not None:
+            self.statusBar().showMessage(f"{m.name} at {theme.format_time(m.t_s)} — "
+                                         "double-click its flag to edit", 3000)
 
     def loop_between_markers(self):
         span = self.editor.span_between_markers(self.doc.cursor_s)
@@ -1057,38 +1138,18 @@ class MainWindow(QMainWindow):
             f"Exported {theme.format_time(len(master) / FS)} ({size} bytes) → {path}", 5000)
 
     def export_audio(self):
-        if not self.safety_ok("export"):
-            return
-        from ..core.export import export_mix
-        from .export_dialog import ExportDialog
-        base = Path(self.doc.path).stem if self.doc.path else "untitled"
-        path, _chosen = QFileDialog.getSaveFileName(
-            self, "Export audio", str(Path(self._last_dir()) / f"{base}.wav"),
-            "WAV (*.wav);;FLAC (*.flac)")
-        if not path:
-            return
-        if Path(path).suffix.lower() not in (".wav", ".flac"):
-            path += ".wav"
-        audio = ExportDialog(self).audio_settings()
-        self.playback.stop()   # the export holds the GUI thread: nothing would read Esc
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            samples = export_mix(self.doc.project, path, audio=audio, cache=self.doc.cache)
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.critical(self, "Export audio", str(e))
-            return
-        finally:
-            QApplication.restoreOverrideCursor()
-        self._remember_dir(path)
-        self.statusBar().showMessage(
-            f"Exported {audio.mode} audio, {theme.format_time(samples / audio.sample_rate)} "
-            f"→ {path}", 6000)
+        """The export dialog set to WAV: the Signal box shows what will be written,
+        Export / Cancel decide. The dialog stops the output before writing."""
+        return self.show_export_dialog("wav")
 
-    def show_export_dialog(self):
+    def export_funscript(self):
+        return self.show_export_dialog("funscript")
+
+    def show_export_dialog(self, fmt: str | None = None):
         from .export_dialog import ExportDialog
         if not self.safety_ok("export"):
             return None
-        dlg = ExportDialog(self)
+        dlg = ExportDialog(self, fmt=fmt)
         dlg.exec()
         return dlg
 
@@ -1304,11 +1365,17 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         if self._pending_dock_sizes:
             QTimer.singleShot(0, self._apply_first_run_docks)
+        elif not self._shown_once and not (self.isMaximized() or self.isFullScreen()):
+            # a size saved on a bigger monitor, or at a smaller display scale
+            QTimer.singleShot(0, lambda: metrics.keep_on_screen(self))
+        QTimer.singleShot(0, self._unelide_dock_tabs)
+        self._shown_once = True
 
     def _apply_first_run_docks(self):
         if not self._pending_dock_sizes:
             return
         browser, inspector, preview, output = self._pending_dock_sizes
+        self._first_run_docks = self._pending_dock_sizes
         self._pending_dock_sizes = None
         self.tabifyDockWidget(preview, self.pattern_dock)
         self.tabifyDockWidget(inspector, self.effects_dock)
@@ -1319,9 +1386,27 @@ class MainWindow(QMainWindow):
         output.raise_()
         preview.raise_()
         inspector.raise_()
-        self.resizeDocks([browser, inspector], [210, 330], Qt.Orientation.Horizontal)
-        self.resizeDocks([preview], [270], Qt.Orientation.Vertical)
-        self.resizeDocks([inspector, output], [380, 420], Qt.Orientation.Vertical)
+        # the separate docks made the window grow while they were stacked: back to
+        # the screen, then dock sizes as shares of it (chosen on 1500×900)
+        avail = metrics.available(self)
+        if avail.width() < 1400 or avail.height() < 800:
+            self.showMaximized()
+        else:
+            metrics.fit_to_screen(self, 1500, 900, frac=0.95)
+            metrics.keep_on_screen(self)
+        QTimer.singleShot(0, self._apply_first_run_dock_sizes)
+        QTimer.singleShot(0, self._unelide_dock_tabs)
+
+    def _apply_first_run_dock_sizes(self):
+        browser, inspector, preview, output = self._first_run_docks
+        w, h = self.width(), self.height()
+        # the right column holds the Output panel: not under ~320 px on small screens
+        right = max(round(w * 0.22), min(320, round(w * 0.3)))
+        self.resizeDocks([browser, inspector], [round(w * 0.14), right],
+                         Qt.Orientation.Horizontal)
+        self.resizeDocks([preview], [round(h * 0.3)], Qt.Orientation.Vertical)
+        self.resizeDocks([inspector, output], [round(h * 0.42), round(h * 0.47)],
+                         Qt.Orientation.Vertical)
 
     # ── shutdown ────────────────────────────────────────────────────────────
     def closeEvent(self, event):

@@ -60,8 +60,15 @@ class VideoSync:
         return INSIDE
 
     # ── timeline events ─────────────────────────────────────────────────────
-    def playhead(self, t: float) -> None:
-        """Running output at timeline second *t*."""
+    def playhead(self, t: float, rate: float = 1.0) -> None:
+        """The timeline is at second *t*, moving at *rate* × real time.
+
+        Rate 1 is normal playback (the output's clock); fast-forward passes its
+        speed, and the thresholds scale with it — at 10× the video covers ten
+        times the distance between two ticks, so a drift that is "large" at 1×
+        is only ordinary jitter there.
+        """
+        rate = max(float(rate), 1e-3)
         state = self.where(t)
         self._set_state(state)
         if state != INSIDE:
@@ -71,20 +78,22 @@ class VideoSync:
         now = self.clock()
         if not self.running:
             self._seek(e, now)
-            self._set_rate(1.0)
+            self._set_rate(rate)
             self.player.play()
             self.running = True
             return
         if now < self._settle_until:
+            if self.rate != rate and abs(self.rate - rate) > rate * NUDGE * 1.5:
+                self._set_rate(rate)              # speed changed during the settle time
             return
         drift = float(self.player.position()) - e
-        if abs(drift) > SEEK_MS:
+        if abs(drift) > SEEK_MS * rate:
             self._seek(e, now)
-            self._set_rate(1.0)
-        elif abs(drift) > NUDGE_MS:
-            self._set_rate(1.0 - math.copysign(NUDGE, drift))   # ahead → slow down
+            self._set_rate(rate)
+        elif abs(drift) > NUDGE_MS * rate:
+            self._set_rate(rate * (1.0 - math.copysign(NUDGE, drift)))   # ahead → slow down
         else:
-            self._set_rate(1.0)
+            self._set_rate(rate)
 
     def stopped(self, cursor_s: float) -> None:
         self._halt()

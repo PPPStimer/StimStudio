@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QHBoxLayout, QLabel, QProgressD
                              QPushButton, QSizePolicy, QToolButton, QVBoxLayout)
 
 from ..audio.convert import METHODS, Cancelled
-from . import theme
+from . import metrics, theme
 
 METHOD_LABELS = {"rolloff": "Spectral rolloff (bright vs. dark — default)",
                  "centroid": "Spectral centroid (smoother)",
@@ -198,7 +198,7 @@ class AudioImportDialog(QDialog):
         cancel.clicked.connect(self.reject)
         bottom.addWidget(cancel)
         lay.addLayout(bottom)
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(metrics.cap_to_screen(560, parent))
 
     def _choose(self, key: str) -> None:
         self.choice = key

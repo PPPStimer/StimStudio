@@ -50,6 +50,22 @@ def test_segment_boundaries_for_staged_activity():
     assert bounds == gen.segment_boundaries(60 * 40, {}, 1)
 
 
+@pytest.mark.parametrize("type_id", ["licks", "luxury_hj", "penetration", "vibrator", "chaos",
+                                     "succubus"])
+def test_activities_expose_stages(type_id):
+    """Activities with discrete internal changes report stage boundaries."""
+    bounds = get_generator(type_id).segment_boundaries(600 * 40, {}, 3)
+    assert len(bounds) > 3 and bounds == sorted(bounds)
+
+
+def test_luxury_hj_bonus_freezes_as_manual():
+    from stimstudio.core.render import manual_params_at, segment_stages
+    snaps = [manual_params_at("luxury_hj", {}, 0, (a + b) / 2)
+             for a, b in segment_stages("luxury_hj", {}, 0, 600.0)]
+    assert any(s["bonus"] in ("A", "B") for s in snaps)
+    assert all(s["manual"] is True for s in snaps)
+
+
 def test_manual_params_snapshot():
     snap = get_generator("licks").manual_params_at(12 * 40, {}, 2)
     assert snap.get("manual") is True and "speed" in snap

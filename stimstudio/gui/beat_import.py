@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBo
                              QLabel, QMessageBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
 
 from ..io.beat_csv import blocks_to_clips, read_beat_timestamps
-from . import theme
+from . import metrics, theme
 
 
 def load_beat_files(paths) -> tuple[list[tuple[str, object]], list[str]]:
@@ -43,7 +43,7 @@ class BeatImportDialog(QDialog):
     def __init__(self, paths, offset_s: float = 0.0, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Import beat timestamps")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(metrics.cap_to_screen(520, parent))
         self.tracks, errors = load_beat_files(paths)
         if errors:
             QMessageBox.warning(self, "Import beat timestamps", "\n".join(errors))

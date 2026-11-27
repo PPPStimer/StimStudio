@@ -219,6 +219,7 @@ class PenetrationActivity(BaseActivity):
         self.manual = bool(self.params.get("manual", False))
         self.speed = float(self.params.get("speed", 1.0))
         self.manual_feel = float(self.params.get("feel", 0.75))
+        self._seg = 0
         self.feel = NiceSmoother(mu.random_in_range(*self.FEEL_RANGE))
         self.speed_change_timer = Timer(lambda: mu.random_in_range(1.0, 20.0), True, self._speed_change)
         self.feel_change_timer = Timer(lambda: mu.random_in_range(2.0, 10.0), True, self._feel_change)
@@ -243,6 +244,7 @@ class PenetrationActivity(BaseActivity):
             self.feel_change_timer.start()
 
     def _speed_change(self):
+        self._seg += 1
         self.wave.set_target_speed(mu.random_in_range(*self.SPEED_RANGE),
                                    mu.random_in_range(*self.SPEED_CHANGE_RATE_RANGE))
 
@@ -260,6 +262,9 @@ class PenetrationActivity(BaseActivity):
         amp_a = position * amp_factor
         amp_b = (scaled_velocity * 0.6 + position * 0.4) * amp_factor
         return Pulse(amp_a, amp_b, freq_a, freq_b)
+
+    def segment_label(self):
+        return self._seg  # a stage per speed change
 
     def manual_snapshot(self):
         return {
@@ -288,6 +293,7 @@ class VibroActivity(BaseActivity):
         self.position = NiceSmoother(mu.random_in_range(*self.POSITION_RANGE))
         self._pulse_tracker = 0.0
         self._vibe_active = False
+        self._seg = 0
         self.frequency_change_timer = Timer(lambda: mu.random_in_range(5.0, 30.0), True, self._frequency_change)
         self.hold_timer = Timer(lambda: mu.random_in_range(1.0, 3.0), False, self._new_target)
 
@@ -304,6 +310,7 @@ class VibroActivity(BaseActivity):
             self.frequency_change_timer.start()
 
     def _frequency_change(self):
+        self._seg += 1
         self.frequency = mu.random_in_range(*self.FREQ_RANGE)
 
     def _new_target(self):
@@ -329,6 +336,9 @@ class VibroActivity(BaseActivity):
         if self._vibe_active:
             amp_a, amp_b = mu.calculate_positional_effect(self.VIBE_POWER, self.position.value, 1.0)
         return Pulse(amp_a, amp_b, self.frequency, self.frequency)
+
+    def segment_label(self):
+        return self._seg  # a stage per frequency change
 
     def manual_snapshot(self):
         return {
@@ -416,12 +426,14 @@ class ChaosActivity(BaseActivity):
         super().__init__(params)
         self.cycle_time = float(self.params.get("cycle_time", 1.0))
         self._counter = 0.0
+        self._seg = 0
         self.amp_a = self.amp_b = self.freq_a = self.freq_b = 0.0
 
     def initialise(self):
         self._randomise()
 
     def _randomise(self):
+        self._seg += 1
         self.amp_a = mu.random_in_range(0.0, 1.0)
         self.amp_b = mu.random_in_range(0.0, 1.0)
         self.freq_a = mu.random_in_range(0.0, 1.0)
@@ -436,6 +448,9 @@ class ChaosActivity(BaseActivity):
 
     def get_pulse(self):
         return Pulse(self.amp_a, self.amp_b, self.freq_a, self.freq_b)
+
+    def segment_label(self):
+        return self._seg  # a stage per random cycle
 
 
 # =====================================================================
@@ -460,6 +475,10 @@ class LuxuryHJActivity(BaseActivity):
         self.hj = WaveManager()
         self.bonus = WaveManager()
         self.bonus_channel = 0
+        # manual mode: a held bonus on channel A / B (frozen from a bonus stage)
+        self.manual_bonus = str(self.params.get("bonus", "Off")) if self.manual else "Off"
+        self.manual_bonus_speed = float(self.params.get("bonus_speed", 3.0))
+        self._seg = 0
         self.speed_change_timer = Timer(lambda: mu.random_in_range(1.0, 20.0), True, self._speed_change)
         self.bonus_timer = Timer(lambda: mu.random_in_range(10.0, 25.0), False)
 
@@ -480,10 +499,18 @@ class LuxuryHJActivity(BaseActivity):
         self.manager.register(self.bonus)
         if self.manual:
             self.hj.set_speed(self.speed)
+            if self.manual_bonus in ("A", "B"):
+                self.bonus_channel = 0 if self.manual_bonus == "A" else 1
+                self.bonus.set_speed(self.manual_bonus_speed)
         else:
             self.speed_change_timer.start()
 
+    @property
+    def bonus_active(self):
+        return self.bonus_timer.is_running or self.manual_bonus in ("A", "B")
+
     def _speed_change(self):
+        self._seg += 1
         self.hj.set_target_speed(mu.random_in_range(*self.HJ_SPEED_RANGE),
                                  mu.random_in_range(*self.HJ_SPEED_CHANGE_RATE_RANGE))
 
@@ -504,7 +531,7 @@ class LuxuryHJActivity(BaseActivity):
         amp_a, amp_b = mu.calculate_positional_effect(base_amp, position, 1.0)
         freq_a = ((position * (self.END_FREQ - self.START_FREQ)) + self.START_FREQ) * 0.98
         freq_b = (position * (self.END_FREQ - self.START_FREQ)) + self.START_FREQ
-        if self.bonus_timer.is_running:
+        if self.bonus_active:
             weight = 0.7
             amp_bonus = self.bonus.get_position("bonus")
             freq_bonus = (amp_bonus * (self.BONUS_END_FREQ - self.BONUS_START_FREQ)) + self.BONUS_START_FREQ
@@ -516,8 +543,21 @@ class LuxuryHJActivity(BaseActivity):
                 freq_b = freq_bonus * weight + freq_b * (1.0 - weight)
         return Pulse(amp_a, amp_b, freq_a, freq_b)
 
+    def segment_label(self):
+        # a stage per stroke-speed change; a bonus burst is a stage of its own
+        if self.bonus_timer.is_running:
+            return (self._seg, "bonus", self.bonus_channel)
+        return self._seg
+
     def manual_snapshot(self):
-        return {"manual": True, "speed": round(self.hj.base_speed.value, 3)}
+        bonus_on = self.bonus_active
+        return {
+            "manual": True,
+            "speed": round(self.hj.base_speed.value, 3),
+            "bonus": ("A", "B")[self.bonus_channel] if bonus_on else "Off",
+            "bonus_speed": round(self.bonus.base_speed.value, 3) if bonus_on
+            else self.manual_bonus_speed,
+        }
 
 
 # =====================================================================
@@ -1040,6 +1080,7 @@ class SuccubusActivity(BaseActivity):
         self.shape_timer = Timer(lambda: mu.random_in_range(10.0, 40.0), True, self._shape_change)
         self.speed_timer = Timer(lambda: mu.random_in_range(10.0, 30.0), True, self._speed_change)
         self.proportion_timer = Timer(lambda: mu.random_in_range(10.0, 30.0), True, self._proportion_change)
+        self._seg = 0
 
     def initialise(self):
         for wm in self.wms:
@@ -1078,11 +1119,16 @@ class SuccubusActivity(BaseActivity):
                 sm.set_target(mu.random_in_range(*self.PROPORTION_RANGE), self.PROPORTION_CHANGE_RATE)
 
     def _shape_change(self):
+        changed = False
         for wm in self.wms:
             if mu.rng().random() < self.WAVE_SHAPE_CHANGE_PROBABILITY:
                 wm.add_wave(self._random_wave(mu.random_int_in_range(*self.WAVE_POINTS_RANGE)), "amp")
+                changed = True
             if mu.rng().random() < self.WAVE_SHAPE_CHANGE_PROBABILITY:
                 wm.add_wave(self._random_wave(mu.random_int_in_range(*self.WAVE_POINTS_RANGE)), "freq")
+                changed = True
+        if changed:
+            self._seg += 1
 
     def _speed_change(self):
         for wm in self.wms:
@@ -1100,6 +1146,9 @@ class SuccubusActivity(BaseActivity):
         freq_a = fp1 * self.freq_prop_a.value + fp2 * (1.0 - self.freq_prop_a.value)
         freq_b = fp1 * self.freq_prop_b.value + fp2 * (1.0 - self.freq_prop_b.value)
         return Pulse(amp_a, amp_b, freq_a, freq_b)
+
+    def segment_label(self):
+        return self._seg  # a stage per wave-shape change
 
 
 # =====================================================================
@@ -1235,6 +1284,8 @@ _make("luxury_hj", "Luxury HJ", LuxuryHJActivity, [
     ParamSpec("timing_jitter", "Timing jitter", "float", 0.15, 0.0, 0.5, 0.05),
     ParamSpec("manual", "Manual control", "bool", False),
     ParamSpec("speed", "Stroke speed (manual)", "float", 1.0, 0.3, 3.0, 0.05),
+    ParamSpec("bonus", "Bonus (manual)", "choice", "Off", choices=("Off", "A", "B")),
+    ParamSpec("bonus_speed", "Bonus speed (manual)", "float", 3.0, 1.5, 5.0, 0.05),
 ])
 _make("opposites", "Opposites", OppositesActivity)
 _make("calibration1", "Calibration 1", Calibration1Activity)

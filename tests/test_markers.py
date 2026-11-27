@@ -3,10 +3,34 @@
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
 
+import pytest
+
 from stimstudio.core.model import Marker, Project
 from stimstudio.gui.song.layout import Snap, nearest_magnet
 from stimstudio.gui.song.ruler import MARK_H
 from stimstudio.io.project_file import load_project, save_project
+
+
+@pytest.fixture
+def marker_answer(monkeypatch):
+    """Answer the marker window without showing it: set ``answer`` to (name, colour),
+    or to None for Cancel. Records the (title, name, colour) each window opened with."""
+    from stimstudio.gui.marker_dialog import MarkerDialog
+    state = {"answer": ("", None), "opened": []}
+
+    def fake_exec(dlg):
+        state["opened"].append((dlg.windowTitle(), dlg.name.text(), dlg.color()))
+        if state["answer"] is None:
+            return MarkerDialog.DialogCode.Rejected
+        name, color = state["answer"]
+        if name:
+            dlg.name.setText(name)
+        if color:
+            dlg.set_color(color)
+        return MarkerDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(MarkerDialog, "exec", fake_exec)
+    return state
 
 
 def test_markers_roundtrip_sorted(tmp_path):
@@ -79,7 +103,7 @@ def test_clip_drag_sticks_to_marker(window):
     assert abs(doc.project.find_clip(clip.id)[1].start_s - 7.3) < 1e-6
 
 
-def test_ruler_double_click_adds_and_renames(window, monkeypatch):
+def test_ruler_double_click_adds_and_renames(window, marker_answer):
     ed, doc = window.editor, window.doc
     doc.set_markers([])
     ed.pps = 20.0
@@ -90,13 +114,14 @@ def test_ruler_double_click_adds_and_renames(window, monkeypatch):
     assert len(doc.project.markers) == 1
     m = doc.project.markers[0]
     assert abs(m.t_s - 123 / 20.0) < 0.03
-    from PyQt6.QtWidgets import QInputDialog
-    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Peak", True)))
+    marker_answer["answer"] = ("Peak", "#d16969")
     x = round(m.t_s * ed.pps)
     QTest.mouseDClick(ed.ruler, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                       QPoint(x, 5))
     assert doc.project.markers[0].name == "Peak"
+    assert doc.project.markers[0].color == "#d16969"
     assert len(doc.project.markers) == 1               # no second marker on the flag
+    assert marker_answer["opened"][-1][:2] == ("Edit marker", "Marker 1")
 
 
 def test_ruler_drag_moves_marker_one_undo(window):
@@ -157,7 +182,7 @@ def test_navigation_and_loop_between(window):
     assert ed.span_between_markers(1.0) == (0.0, 2.0)
 
 
-def test_add_marker_action_and_clear(window):
+def test_add_marker_action_and_clear(window, marker_answer):
     doc = window.doc
     doc.set_markers([])
     doc.set_cursor(3.5)
@@ -169,3 +194,50 @@ def test_add_marker_action_and_clear(window):
     assert doc.project.markers == []
     doc.undo.undo()
     assert len(doc.project.markers) == 2
+
+
+def test_marker_dialog_name_and_colour(qapp):
+    from stimstudio.gui.marker_dialog import DEFAULT_COLOR, SWATCHES, MarkerDialog
+    dlg = MarkerDialog(None, "New marker", "Intro", "#569cd6")
+    assert dlg.values() == ("Intro", "#569cd6")
+    assert dlg.swatches["#569cd6"].isChecked()
+    dlg.swatches[SWATCHES[5]].click()
+    assert dlg.color() == SWATCHES[5]
+    dlg.set_color("#123456")                       # "Other…": no swatch stays checked
+    assert dlg.color() == "#123456"
+    assert not any(b.isChecked() for b in dlg.swatches.values())
+    dlg.name.setText("  Drop  ")
+    assert dlg.values() == ("Drop", "#123456")
+    assert MarkerDialog(None, color="not a colour").color() == DEFAULT_COLOR
+
+
+def test_shift_m_asks_name_and_colour(window, marker_answer):
+    doc = window.doc
+    doc.set_markers([])
+    doc.set_cursor(4.0)
+    marker_answer["answer"] = ("Build-up", "#c586c0")
+    window.a_add_marker.trigger()
+    m = doc.project.markers[0]
+    assert (m.t_s, m.name, m.color) == (4.0, "Build-up", "#c586c0")
+    assert marker_answer["opened"][-1][:2] == ("New marker", "Marker 1")
+    # the next new marker starts with the colour used last
+    marker_answer["answer"] = None                  # Cancel: nothing is added
+    window.a_add_marker.trigger()
+    assert len(doc.project.markers) == 1
+    assert marker_answer["opened"][-1] == ("New marker", "Marker 2", "#c586c0")
+
+
+def test_marker_edit_is_one_undo_step(window, marker_answer):
+    doc = window.doc
+    doc.set_markers([Marker(2.0, "a")])
+    mid = doc.project.markers[0].id
+    n = doc.undo.count()
+    marker_answer["answer"] = ("b", "#4ec9b0")
+    window.editor.edit_marker(mid)
+    assert (doc.project.markers[0].name, doc.project.markers[0].color) == ("b", "#4ec9b0")
+    assert doc.undo.count() == n + 1
+    doc.undo.undo()
+    assert (doc.project.markers[0].name, doc.project.markers[0].color) == ("a", "#dcdcaa")
+    marker_answer["answer"] = None                  # Cancel changes nothing
+    window.editor.edit_marker(mid)
+    assert doc.undo.index() == n

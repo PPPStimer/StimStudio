@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QD
 
 from ..core.pulse import FS
 from ..io import video_analysis as va
-from . import theme
+from . import metrics, theme
 
 _CACHE: "OrderedDict[tuple, va.VideoAnalysis]" = OrderedDict()
 _CACHE_MAX = 4
@@ -192,7 +192,7 @@ class VideoAnalysisDialog(QDialog):
         self.path, self.duration_s = path, duration_s
         self.analysis: va.VideoAnalysis | None = None
         self._analysis_key = None
-        lay = QVBoxLayout(self)
+        lay = QVBoxLayout(metrics.scroll_body(self))
 
         top = QHBoxLayout()
         self.picker = RoiPicker()
@@ -297,7 +297,7 @@ class VideoAnalysisDialog(QDialog):
         self.rate.currentIndexChanged.connect(lambda _i: self._sync())
         self.flow.toggled.connect(lambda _on: self._sync())
         self._load_frame()
-        self.resize(820, 640)
+        metrics.fit_to_screen(self, 820, 640)
         self._sync()
 
     @staticmethod

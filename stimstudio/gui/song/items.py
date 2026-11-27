@@ -10,7 +10,7 @@ from PyQt6.QtGui import QBrush, QColor, QFont, QPainterPath, QPen
 from PyQt6.QtWidgets import QGraphicsItem
 
 from ...core.pulse import FS
-from .. import theme
+from .. import metrics, theme
 from .layout import CLIP_ROW_H, LANE_H
 from .paths import curve_path
 
@@ -254,9 +254,7 @@ class ClipItem(QGraphicsItem):
         pattern = self.kind == "pattern"
         xs = [t * self._pps for t, _v, _k in self.marks]
         roomy = len(xs) < 2 or min(b - a for a, b in zip(xs, xs[1:])) > 12
-        font = QFont(painter.font())
-        font.setPixelSize(9)
-        painter.setFont(font)
+        painter.setFont(metrics.paint_font(9, base=painter.font()))
         for x, (_t, v, key) in zip(xs, self.marks):
             if x < exposed.left() - 8 or x > exposed.right() + 8:
                 continue
